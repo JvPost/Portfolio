@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ksb"
+version = "0.1.0"
+description = "Kinematic Synchronization Buffer — jerk-limited trajectory planning for stochastic arrival synchronization"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ksb*"]

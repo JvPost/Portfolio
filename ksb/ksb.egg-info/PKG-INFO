@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: ksb
+Version: 0.1.0
+Summary: Kinematic Synchronization Buffer — jerk-limited trajectory planning for stochastic arrival synchronization
+Requires-Python: >=3.11
+Requires-Dist: numpy>=1.24
+Requires-Dist: scipy>=1.10

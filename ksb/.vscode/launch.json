@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "run_sim",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/run_sim.py",
+            "args": ["--seed", "42"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "run_viewer",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/run_viewer.py",
+            "args": ["--seed", "42"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
