@@ -253,7 +253,7 @@ def get_assigned_slots(
     item_slot_trajs = []
     vd = vf
     slot_period = slot_length / vd
-    k = int((T0[0] + L_buffer_ctrl / vi) // slot_period) - 1 # minus one, because zero indexing
+    slot_idx = int((T0[0] + L_buffer_ctrl / vi) // slot_period) - 1 # minus one, because zero indexing
 
     i = 0
     for t0 in T0: # loop over inputs 
@@ -265,12 +265,12 @@ def get_assigned_slots(
                 raise SlotAssignmentError(f"No feasible slot for item at t0={t0:.4f}")
             
             try:
-                k += 1
-                slot_time = k * slot_period + t_offset
+                slot_idx += 1
+                slot_time = slot_idx * slot_period + t_offset
                 time_horizon = slot_time - t0
                 traj = solver.solve(0.0, vi, L_buffer_ctrl, vd, time_horizon, bounds, policy)
                 found = True
-                item_slot_indeces[i] = k
+                item_slot_indeces[i] = slot_idx
 
                 i += 1
             except InfeasibleError:
