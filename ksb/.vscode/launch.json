@@ -11,6 +11,15 @@
             "cwd": "${workspaceFolder}"
         },
         {
+            "name": "run_debug",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/run_debug.py",
+            "args": ["--seed", "42"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "run_viewer",
             "type": "debugpy",
             "request": "launch",

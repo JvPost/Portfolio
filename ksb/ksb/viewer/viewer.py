@@ -234,7 +234,7 @@ class KSBViewer:
             color = item_colors[i]
             pygame.draw.rect(screen, color, rect, border_radius=3)
             pygame.draw.rect(screen, ITEM_BORDER, rect, width=1, border_radius=3)
-            self._draw_label(screen, font_label, f"P{i+1}", rect)
+            self._draw_label(screen, font_label, f"{i+1}", rect)
 
         self._draw_hud(screen, font_small, t)
 

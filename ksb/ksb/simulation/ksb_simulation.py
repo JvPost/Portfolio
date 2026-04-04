@@ -4,7 +4,7 @@ from typing import List, Optional
 
 import numpy as np
 
-from ksb.control.control_profile import ConstantJerkControl
+from ksb.control.upstream_control import ConstantJerkControl, DecelerateOnSkipControl
 from ksb.motion.item_pair import compute_pairs
 from ksb.motion.trajectories import CompositeTrajectory, TrajectoryProfile, P, V, A
 from ksb.planning.contracts import IProfileSolver, Policy
@@ -74,7 +74,7 @@ class KSBSimulation:
         ])
         self.policy = Policy(input_length=self.input_length)
 
-        self._u_control = ConstantJerkControl(jerks=[0.0], durations=[100]) # doesn't mean anything yet.
+        self._u_control = ConstantJerkControl(self.vu)
         self._d_solver = LinearTrajectorySolver()
 
     def run(self, seed: Optional[int] = None) -> SimulationResult:
@@ -96,26 +96,40 @@ class KSBSimulation:
             seed=seed,
         )
 
-        # 2) Upstream trajectories 
-        upstream_trajectories: List[TrajectoryProfile] = []
-        upstream_ctrl_trajectories: List[TrajectoryProfile] = []
-        for t0 in t_spawn:
-            upstream_trajectories.append(self._u_control.subsection(t0, x0_upstream, L_upstream))
-            upstream_ctrl_trajectories.append(self._u_control.subsection(t0, x0_upstream, L_upstream_ctrl))
+        # 2) upstream control & 3) slot assignment
+        assigned_slots = np.empty(self.batch, dtype=int)
+        t_control_start = np.empty(self.batch, dtype=float)
+        t_duration_upstream = np.empty(self.batch, dtype=float)
+        buffer_trajectories:List[TrajectoryProfile] = []
+        upstream_ctrl_trajectories:List[TrajectoryProfile] = []
+        slot_idx = int((t_spawn[0] + (L_upstream + self.L_buffer) / vu) // slot_period) - 1 # minus one, because zero indexing
+        prev_slot_idx = None
+        
+        for i, t0 in enumerate(t_spawn):
+            upstream_ctrl_traj = self._u_control.subsection(t0, L_upstream_ctrl)
 
-        t_duration_upstream = np.array([t.T for t in upstream_ctrl_trajectories])
-        t_control_start = t_spawn + t_duration_upstream
+            t_in = t0 + upstream_ctrl_traj.T
 
-        # 3) Slot assignment
-        assigned_slots, slot_trajs = utils.get_assigned_slots(
-            t_control_start,
-            self.slot_length,
-            vu, vd, L_buffer_ctrl,
-            bounds, policy, self.solver,
-        )
+            slot_idx, buffer_traj = utils.get_next_slot(t_in, slot_idx, self.slot_length, 
+                                            self.vu, self.vd, L_buffer_ctrl, self.bounds, 
+                                            self.policy, self.solver)
+            
+            if prev_slot_idx != None:
+                skipped = slot_idx > prev_slot_idx + 1
+                if skipped:
+                    self._u_control.on_skip(t_in)
+             
+            buffer_trajectories.append(buffer_traj)
+
+            t_control_start[i] = t_in
+            assigned_slots[i] = slot_idx
+            t_duration_upstream[i] = upstream_ctrl_traj.T
+            upstream_ctrl_trajectories.append(upstream_ctrl_traj)
+
+            prev_slot_idx = slot_idx
 
         assigned_slot_times = assigned_slots * slot_period
-        time_horizons = assigned_slot_times - t_control_start
+        buffer_T_array = assigned_slot_times - t_control_start
 
         # 4) Phase errors
         projected_no_corr = t_spawn + (L_upstream + self.L_buffer) / vu
@@ -128,10 +142,9 @@ class KSBSimulation:
 
         # 5) Buffer + downstream trajectories
         total_trajectories: List[CompositeTrajectory] = []
-        buffer_trajectories: List[TrajectoryProfile] = slot_trajs 
         downstream_T = L_downstream / vd
 
-        for i, tf in enumerate(time_horizons):
+        for i, tf in enumerate(buffer_T_array):
             sb_traj = buffer_trajectories[i]
             d_traj = self._d_solver.solve(
                 pi=0.0, vi=vd, pf=L_downstream, vf=vd, T=downstream_T,
@@ -147,8 +160,11 @@ class KSBSimulation:
 
         # 6) pair record 
         input_delta_t = np.diff(t_spawn)
-        t_window_start = np.array([t.T for t in upstream_trajectories])[1:]
-        t_window_end = t_window_start + time_horizons[:-1]
+
+        # t_window_start = np.array([t.T for t in upstream_trajectories])[1:]
+        t_window_start = np.array([t.find_time_at_position(L_upstream) for t in upstream_ctrl_trajectories])[1:]
+
+        t_window_end = t_window_start + buffer_T_array[:-1]
 
         pairs = compute_pairs(
             trajectories=total_trajectories,
@@ -166,7 +182,7 @@ class KSBSimulation:
             t_spawn=t_spawn,
             t_control_start=t_control_start,
             assigned_slots=assigned_slots,
-            time_horizons=time_horizons,
+            time_horizons=buffer_T_array,
             skip_indices=skip_indices,
             phi_u=phi_u,
             phi_0=phi_0,

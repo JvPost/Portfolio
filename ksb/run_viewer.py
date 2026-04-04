@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from ksb.planning.solvers.quintic import QuinticTrajectorySolver
+from ksb.planning.solvers.quintic import QuinticSolver
 from ksb.planning.solvers.scurve import SCurveSolver
 from ksb.simulation.ksb_simulation import KSBSimulation
 from ksb.viewer.viewer import KSBViewer
@@ -29,7 +29,7 @@ def main():
         cfg = yaml.safe_load(f)
 
     solver_name = cfg.get("solver", "scurve")
-    solver = SCurveSolver() if solver_name == "scurve" else QuinticTrajectorySolver()
+    solver = SCurveSolver() if solver_name == "scurve" else QuinticSolver()
     cfg["solver_name"] = solver_name
 
     print(f"Running simulation: solver={solver_name}  seed={args.seed}  "

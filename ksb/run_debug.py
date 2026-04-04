@@ -16,7 +16,6 @@ from ksb.simulation.ksb_simulation import KSBSimulation
 
 _CONFIG_DIR = Path(__file__).parent / "configs"
 
-
 def main():
     parser = argparse.ArgumentParser(description="KSB simulation runner")
     parser.add_argument("--seed", type=int, default=42,
@@ -36,7 +35,10 @@ def main():
     print(f"Batch  : {cfg['batch']}")
     print()
 
-    result = KSBSimulation(cfg=cfg, solver=solver).run(seed=args.seed)
+    sim = KSBSimulation(cfg=cfg, solver=solver)
+    result = sim.run(seed=args.seed)
+    u_timeline = sim._u_control._timeline
+    
 
     # ── Slot assignment ──────────────────────────────────────────────────────
     print("=== Slot assignment ===")

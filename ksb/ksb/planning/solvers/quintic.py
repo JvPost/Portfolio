@@ -4,7 +4,7 @@ from ksb.motion.trajectories import PolynomialTrajectory, P, V, A
 from ksb.planning.contracts import IProfileSolver, InfeasibleError, J_MAX, A_MAX, V_MAX
 
 
-class QuinticTrajectorySolver(IProfileSolver):
+class QuinticSolver(IProfileSolver):
     """Quintic (5th-order position) trajectory solver.
 
     Solves the 6×6 linear system for boundary conditions:

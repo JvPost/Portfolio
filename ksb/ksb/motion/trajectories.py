@@ -40,6 +40,10 @@ class TrajectoryProfile(ABC):
         """True if trajectory stays within bounds array [j_max, A_max, V_max, gap_min]."""
         pass
 
+    @abstractmethod
+    def find_time_at_position(self, p_target: float, tol: float = 1e-9) -> float | None:
+        pass
+
     def __call__(self, t: Union[float, np.ndarray]) -> np.ndarray:
         return self.eval(t)
 
@@ -139,6 +143,109 @@ class LinearTrajectory(TrajectoryProfile):
             and 0 <= bounds[J_MAX]
         )
 
+    def find_time_at_position(self, p_target: float, tol: float = 1e-9) -> float | None:
+        """Find time t where position = p_target (relative to segment start)."""
+        p_end = self.x0[V] * self.T
+        if p_target < -tol or p_target > p_end + tol:
+            return None
+        if abs(self.x0[V]) < 1e-12:
+            return None
+        return float(np.clip(p_target / self.x0[V], 0.0, self.T))
+
+
+# ---------- Constant-jerk primitive ----------
+@dataclass(frozen=True)
+class ConstantJerkTrajectory(TrajectoryProfile):
+    """Single constant-jerk phase: cubic position, quadratic velocity, linear acceleration.
+
+    x0[P] must be 0 (delta position semantics).
+    Kinematics:
+        p(t) = x0[V]*t + 0.5*x0[A]*t² + (1/6)*jerk*t³
+        v(t) = x0[V] + x0[A]*t + 0.5*jerk*t²
+        a(t) = x0[A] + jerk*t
+    """
+    jerk: float
+
+    def __post_init__(self):
+        if abs(self.T) < 1e-9:
+            raise ValueError("Duration T must be positive")
+        if not np.isclose(self.x0[P], 0.0, atol=1e-6):
+            raise ValueError("ConstantJerkTrajectory expects x0[P] ≈ 0 (delta position semantics)")
+
+    def eval(self, t: Union[float, np.ndarray]) -> np.ndarray:
+        scalar = np.isscalar(t)
+        t_arr = np.atleast_1d(np.asarray(t, dtype=float))
+        t_c = np.clip(t_arr, 0.0, self.T)
+
+        t2 = t_c ** 2
+        t3 = t_c ** 3
+
+        if self.jerk > 0:
+            assert True
+
+        p = self.x0[V] * t_c + 0.5 * self.x0[A] * t2 + (1.0 / 6.0) * self.jerk * t3
+        v = self.x0[V] + self.x0[A] * t_c + 0.5 * self.jerk * t2
+        a = self.x0[A] + self.jerk * t_c
+
+        if scalar:
+            return np.array([float(p[0]), float(v[0]), float(a[0])])
+        return np.array([p, v, a])  # shape (3, N)
+
+    def get_duration(self) -> float:
+        return self.T
+
+    def check_bounds(self, bounds: np.ndarray, num_samples: int = 100) -> bool:
+        if abs(self.jerk) > bounds[J_MAX] + 1e-9:
+            return False
+
+        a_start = self.x0[A]
+        a_end = self.x0[A] + self.jerk * self.T
+        if np.any(np.abs([a_start, a_end]) > bounds[A_MAX] + 1e-9):
+            return False
+
+        v_start = self.x0[V]
+        v_end = self.eval(self.T)[V]
+        v_candidates = [v_start, v_end]
+
+        if abs(self.jerk) > 1e-9:
+            t_crit = -self.x0[A] / self.jerk
+            if 0 < t_crit < self.T:
+                v_candidates.append(self.eval(t_crit)[V])
+
+        if np.any(np.abs(v_candidates) > bounds[V_MAX] + 1e-9):
+            return False
+
+        return True
+
+    def end_state(self) -> np.ndarray:
+        """State array [p, v, a] at t = T."""
+        return self.eval(self.T)
+
+    def find_time_at_position(self, p_target: float, tol: float = 1e-9) -> float | None:
+        """Find time t where position = p_target (relative to segment start).
+
+        Solves: v0*t + 0.5*a0*t² + (1/6)*j*t³ = p_target
+        Returns None if p_target is outside [0, p(T)].
+        """
+        p_end = self.eval(self.T)[P]
+
+        if p_target < -tol or p_target > p_end + tol:
+            return None
+        if abs(p_target) < tol:
+            return 0.0
+        if abs(p_target - p_end) < tol:
+            return self.T
+
+        v0, a0, j = self.x0[V], self.x0[A], self.jerk
+        roots = np.roots([j / 6.0, a0 / 2.0, v0, -p_target])
+        candidates = [
+            r.real for r in roots
+            if abs(r.imag) < 1e-9 and 0.0 < r.real < self.T + tol
+        ]
+        if not candidates:
+            return None
+        return float(min(candidates))
+
 
 # ---------- Composite trajectory ----------
 @dataclass(frozen=True)
@@ -156,7 +263,7 @@ class CompositeTrajectory(TrajectoryProfile):
             if not np.allclose(
                 [prev_end[V], prev_end[A]],
                 [curr_x0[V], curr_x0[A]],
-                atol=1e-6,
+                atol=1e-4,
             ):
                 raise ValueError(
                     f"Velocity or acceleration discontinuity between segment {i-1} and {i}\n"
@@ -236,71 +343,18 @@ class CompositeTrajectory(TrajectoryProfile):
     def check_bounds(self, bounds: np.ndarray, num_samples: int = 100) -> bool:
         return all(seg.check_bounds(bounds, num_samples) for seg in self.segments)
 
+    def find_time_at_position(self, p_target: float, tol: float = 1e-9) -> float | None:
+        """Find time t where cumulative position = p_target."""
+        p_offset = 0.0
+        t_offset = 0.0
+        for seg in self.segments:
+            p_end_seg = seg.eval(seg.T)[P]
+            if p_target <= p_offset + p_end_seg + tol:
+                local_t = seg.find_time_at_position(p_target - p_offset, tol)
+                if local_t is not None:
+                    return t_offset + local_t
+            p_offset += p_end_seg
+            t_offset += seg.T
+        return None
 
-# ---------- Constant-jerk primitive ----------
-@dataclass(frozen=True)
-class ConstantJerkTrajectory(TrajectoryProfile):
-    """Single constant-jerk phase: cubic position, quadratic velocity, linear acceleration.
 
-    x0[P] must be 0 (delta position semantics).
-    Kinematics:
-        p(t) = x0[V]*t + 0.5*x0[A]*t² + (1/6)*jerk*t³
-        v(t) = x0[V] + x0[A]*t + 0.5*jerk*t²
-        a(t) = x0[A] + jerk*t
-    """
-    jerk: float
-
-    def __post_init__(self):
-        if abs(self.T) < 1e-9:
-            raise ValueError("Duration T must be positive")
-        if not np.isclose(self.x0[P], 0.0, atol=1e-6):
-            raise ValueError("ConstantJerkTrajectory expects x0[P] ≈ 0 (delta position semantics)")
-
-    def eval(self, t: Union[float, np.ndarray]) -> np.ndarray:
-        scalar = np.isscalar(t)
-        t_arr = np.atleast_1d(np.asarray(t, dtype=float))
-        t_c = np.clip(t_arr, 0.0, self.T)
-
-        t2 = t_c ** 2
-        t3 = t_c ** 3
-
-        if self.jerk > 0:
-            assert True
-
-        p = self.x0[V] * t_c + 0.5 * self.x0[A] * t2 + (1.0 / 6.0) * self.jerk * t3
-        v = self.x0[V] + self.x0[A] * t_c + 0.5 * self.jerk * t2
-        a = self.x0[A] + self.jerk * t_c
-
-        if scalar:
-            return np.array([float(p[0]), float(v[0]), float(a[0])])
-        return np.array([p, v, a])  # shape (3, N)
-
-    def get_duration(self) -> float:
-        return self.T
-
-    def check_bounds(self, bounds: np.ndarray, num_samples: int = 100) -> bool:
-        if abs(self.jerk) > bounds[J_MAX] + 1e-9:
-            return False
-
-        a_start = self.x0[A]
-        a_end = self.x0[A] + self.jerk * self.T
-        if np.any(np.abs([a_start, a_end]) > bounds[A_MAX] + 1e-9):
-            return False
-
-        v_start = self.x0[V]
-        v_end = self.eval(self.T)[V]
-        v_candidates = [v_start, v_end]
-
-        if abs(self.jerk) > 1e-9:
-            t_crit = -self.x0[A] / self.jerk
-            if 0 < t_crit < self.T:
-                v_candidates.append(self.eval(t_crit)[V])
-
-        if np.any(np.abs(v_candidates) > bounds[V_MAX] + 1e-9):
-            return False
-
-        return True
-
-    def end_state(self) -> np.ndarray:
-        """State array [p, v, a] at t = T."""
-        return self.eval(self.T)

@@ -284,3 +284,54 @@ def get_assigned_slots(
     assert i == T0.shape[0]
     assert len(item_slot_indeces) == len(item_slot_trajs)
     return item_slot_indeces, item_slot_trajs
+
+def get_next_slot(
+    t_control_start: float,
+    slot_idx: int,
+    slot_length: float,
+    vi: float,
+    vf: float,
+    L_buffer_ctrl: float,
+    bounds: np.ndarray,
+    policy: Policy,
+    solver: IProfileSolver,
+    t_offset: float = 0.0,
+) -> Tuple[int, TrajectoryProfile]:
+    """Assign a single input to the earliest feasible slot index.
+
+    Args:
+        t_control_start: buffer entry time for this input (s)
+        slot_idx:        slot index to start searching from
+        slot_length:     slot spacing (m)
+        vi:              initial velocity (m/s)
+        vf:              target velocity at slot (m/s)
+        L_buffer_ctrl:   distance to cover in the buffer (m)
+        bounds:          np.array([j_max, A_max, V_max, gap_min])
+        policy:          Policy config
+        solver:          trajectory solver
+        t_offset:        time offset for slot phase (s)
+
+    Returns:
+        slot_idx: assigned slot index
+        traj:     feasible trajectory profile
+    """
+    vd = vf
+    slot_period = slot_length / vd
+    attempts = 0
+
+    while True:
+        attempts += 1
+        if attempts > 10:
+            raise SlotAssignmentError(
+                f"No feasible slot for input at t_control_start={t_control_start:.4f}"
+            )
+
+        slot_idx += 1
+        slot_time = slot_idx * slot_period + t_offset
+        time_horizon = slot_time - t_control_start
+
+        try:
+            traj = solver.solve(0.0, vi, L_buffer_ctrl, vd, time_horizon, bounds, policy)
+            return slot_idx, traj
+        except InfeasibleError:
+            continue
