@@ -11,8 +11,8 @@ slot_length: 0.60
 input_gap_mean: 0.60
 input_gap_std: 0.05
 arrival_rate_ppm: 120
-slot_rate_ppm: 132
-batch: 100
+slot_rate_ppm: 144
+batch: 1
 
 start_margin: 0.65
 end_margin: 0.0

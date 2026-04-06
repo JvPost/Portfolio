@@ -4,7 +4,7 @@ from typing import List, Optional
 
 import numpy as np
 
-from ksb.control.upstream_control import ConstantJerkControl, DecelerateOnSkipControl
+from ksb.control.upstream_control import ConstantVelocityControl, UpstreamController, PreAccelerateControl
 from ksb.motion.item_pair import compute_pairs
 from ksb.motion.trajectories import CompositeTrajectory, TrajectoryProfile, P, V, A
 from ksb.planning.contracts import IProfileSolver, Policy
@@ -74,7 +74,9 @@ class KSBSimulation:
         ])
         self.policy = Policy(input_length=self.input_length)
 
-        self._u_control = ConstantJerkControl(self.vu)
+        # self._u_control = ConstantVelocityControl(self.vu)
+        self._u_control = PreAccelerateControl(self.vu, self.jmax, self.Amax, 
+                                               0.1, self.vd)
         self._d_solver = LinearTrajectorySolver()
 
     def run(self, seed: Optional[int] = None) -> SimulationResult:
@@ -109,9 +111,10 @@ class KSBSimulation:
             upstream_ctrl_traj = self._u_control.subsection(t0, L_upstream_ctrl)
 
             t_in = t0 + upstream_ctrl_traj.T
+            v_in = self._u_control._state_at(t_in)[V]
 
-            slot_idx, buffer_traj = utils.get_next_slot(t_in, slot_idx, self.slot_length, 
-                                            self.vu, self.vd, L_buffer_ctrl, self.bounds, 
+            slot_idx, buffer_traj = utils.get_next_slot(t_in, 0, self.slot_length, 
+                                            v_in, self.vd, L_buffer_ctrl, self.bounds, 
                                             self.policy, self.solver)
             
             if prev_slot_idx != None:
