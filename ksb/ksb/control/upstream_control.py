@@ -37,7 +37,6 @@ class UpstreamController(ABC):
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
-
     def subsection(
         self,
         t_spawn: float,
@@ -78,17 +77,19 @@ class UpstreamController(ABC):
 
             x0_local = np.array([0.0, v_now, a_now])
             candidate = ConstantJerkTrajectory(x0=x0_local, T=seg_remaining, jerk=seg_j)
-            dx_full = candidate.eval(seg_remaining)[P]
+            dx_full = candidate.eval(seg_remaining)
+            dp_full = dx_full[P]
 
-            if dx_full < remaining + 1e-9:
+            if dp_full < remaining + 1e-9:
                 segments.append(candidate)
-                remaining -= dx_full
+                remaining -= dp_full
                 t_now += seg_remaining
                 end = candidate.eval(seg_remaining)
                 v_now = float(end[V])
                 a_now = float(end[A])
             else:
                 dt = self._solve_distance(v_now, a_now, seg_j, remaining)
+                assert dt > 0, "dt cannot be negative"
                 x0_last = np.array([0.0, v_now, a_now])
                 segments.append(ConstantJerkTrajectory(x0=x0_last, T=dt, jerk=seg_j))
                 remaining = 0.0
@@ -169,22 +170,27 @@ class UpstreamController(ABC):
     @staticmethod
     def _solve_distance(v0: float, a0: float, j: float, d: float) -> float:
         """Solve for smallest t > 0 such that v0*t + 0.5*a0*t² + (1/6)*j*t³ = d."""
-        if abs(j) < 1e-12:
-            if abs(a0) < 1e-9:
+        if abs(j) < 1e-12: # 0 jerk case
+            if abs(a0) < 1e-9: # 0 acc case
                 return d / max(v0, 1e-10)
+
             a_c, b_c, c_c = 0.5 * a0, v0, -d
             disc = b_c**2 - 4 * a_c * c_c
             if disc < 0:
                 raise ValueError("No real solution for distance")
             sq = np.sqrt(disc)
             candidates = [(-b_c + sq) / (2 * a_c), (-b_c - sq) / (2 * a_c)]
-        else:
+        else: # general case
             roots = np.roots([j / 6.0, a0 / 2.0, v0, -d])
             candidates = [r.real for r in roots if abs(r.imag) < 1e-9 and r.real > 1e-9]
 
         if not candidates:
             raise ValueError("No positive real solution for distance")
-        return float(min(candidates))
+        candidates = [c for c in candidates if c > 1e-9]
+        _c = float(min(candidates))
+        if _c < 0:
+            raise ValueError("Negative canditate")
+        return _c
 
 
 # ======================================================================

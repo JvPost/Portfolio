@@ -4,15 +4,15 @@ Vmax: 3.0
 Amax: 8.5
 L_upstream: 2.0
 L_buffer: 2.5
-L_downstream: 1.0
+L_downstream: 2.0
 input_length: 0.32
 N: 5
 slot_length: 0.60
 input_gap_mean: 0.60
 input_gap_std: 0.05
 arrival_rate_ppm: 120
-slot_rate_ppm: 144
-batch: 1
+slot_rate_ppm: 126
+batch: 100
 
-start_margin: 0.65
+start_margin: 0.65 # the fraction of the input length, that must be on the buffer, before buffer control may commence.
 end_margin: 0.0

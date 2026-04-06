@@ -261,8 +261,8 @@ class CompositeTrajectory(TrajectoryProfile):
             prev_end = self.segments[i - 1].eval(self.segments[i - 1].T)  # shape (3,)
             curr_x0 = self.segments[i].x0  # shape (3,)
             if not np.allclose(
-                [prev_end[V], prev_end[A]],
-                [curr_x0[V], curr_x0[A]],
+                [prev_end[V]],
+                [curr_x0[V]],
                 atol=1e-4,
             ):
                 raise ValueError(

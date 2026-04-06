@@ -5,7 +5,7 @@ from typing import List, Optional
 import numpy as np
 
 from ksb.control.upstream_control import ConstantVelocityControl, UpstreamController, PreAccelerateControl
-from ksb.motion.item_pair import compute_pairs
+from ksb.motion.item_pair import PairRecord, compute_pairs
 from ksb.motion.trajectories import CompositeTrajectory, TrajectoryProfile, P, V, A
 from ksb.planning.contracts import IProfileSolver, Policy
 from ksb.planning.solvers.linear import LinearTrajectorySolver
@@ -61,8 +61,10 @@ class KSBSimulation:
 
         start_margin = float(cfg.get("start_margin", 1.0))
         end_margin = float(cfg.get("end_margin", 0.0))
+
         assert end_margin == 0.0, "non zero end_margin not implemented yet"
         self.L_buffer_ctrl = self.L_buffer - self.input_length * start_margin # buffer control length
+
         self.L_upstream_ctrl = self.L_upstream + start_margin * self.input_length # The length over which usptream control active
 
         # bounds as numpy array: [j_max, A_max, V_max, gap_min]
@@ -76,7 +78,7 @@ class KSBSimulation:
 
         # self._u_control = ConstantVelocityControl(self.vu)
         self._u_control = PreAccelerateControl(self.vu, self.jmax, self.Amax, 
-                                               0.1, self.vd)
+                                               1.0, self.Vmax)
         self._d_solver = LinearTrajectorySolver()
 
     def run(self, seed: Optional[int] = None) -> SimulationResult:
@@ -85,7 +87,7 @@ class KSBSimulation:
         L_buffer_ctrl, L_upstream_ctrl = self.L_buffer_ctrl, self.L_upstream_ctrl
         slot_period = self.slot_period
         bounds, policy = self.bounds, self.policy
-
+        
         x0_upstream = np.array([0.0, vu, 0.0])
 
         # 1) Spawn times
@@ -104,7 +106,8 @@ class KSBSimulation:
         t_duration_upstream = np.empty(self.batch, dtype=float)
         buffer_trajectories:List[TrajectoryProfile] = []
         upstream_ctrl_trajectories:List[TrajectoryProfile] = []
-        slot_idx = int((t_spawn[0] + (L_upstream + self.L_buffer) / vu) // slot_period) - 1 # minus one, because zero indexing
+        slot_idx = 0 # find a better heuristic than just 0
+
         prev_slot_idx = None
         
         for i, t0 in enumerate(t_spawn):
@@ -113,7 +116,7 @@ class KSBSimulation:
             t_in = t0 + upstream_ctrl_traj.T
             v_in = self._u_control._state_at(t_in)[V]
 
-            slot_idx, buffer_traj = utils.get_next_slot(t_in, 0, self.slot_length, 
+            slot_idx, buffer_traj = utils.get_next_slot(t_in, slot_idx, self.slot_length, 
                                             v_in, self.vd, L_buffer_ctrl, self.bounds, 
                                             self.policy, self.solver)
             
@@ -169,16 +172,18 @@ class KSBSimulation:
 
         t_window_end = t_window_start + buffer_T_array[:-1]
 
-        pairs = compute_pairs(
-            trajectories=total_trajectories,
-            delta_t=input_delta_t,
-            t_rel_start=t_window_start,
-            t_rel_end=t_window_end,
-            n_points=1200,
-        )
+        pairs: List[PairRecord] = []
+        if self.batch > 1:
+            pairs = compute_pairs(
+                trajectories=total_trajectories,
+                delta_t=input_delta_t,
+                t_rel_start=t_window_start,
+                t_rel_end=t_window_end,
+                n_points=1200,
+            )
 
-        for p in pairs:
-            p.compute_integrals(g_min=self.min_gap_on_buffer)
+            for p in pairs:
+                p.compute_integrals(g_min=self.min_gap_on_buffer)
 
         return SimulationResult(
             cfg=self.cfg,

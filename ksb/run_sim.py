@@ -40,8 +40,7 @@ def main():
 
     # ── Slot assignment ──────────────────────────────────────────────────────
     print("=== Slot assignment ===")
-    print(f"  Assigned slots : {result.assigned_slots}")
-    skips = result.skip_indices
+    skips = result.skip_indices + 1
     if len(skips) == 0:
         print("  Skipped slots  : none")
     else:
@@ -66,26 +65,27 @@ def main():
           f"range=[{result.phi_0.min():.3f}, {result.phi_0.max():.3f}]")
 
     # ── Gap metrics ───────────────────────────────────────────────────────────
-    print()
-    print("=== Gap metrics (consecutive pairs on buffer) ===")
-    pairs = result.pair_records
-    min_gaps = np.array([p.min_gap for p in pairs])
-    avg_margins = np.array([p.average_margin for p in pairs
-                            if p.average_margin is not None])
-    viol_integrals = np.array([p.violation_integral for p in pairs
-                               if p.violation_integral is not None])
+    if (len(result.pair_records) > 0):
+        print()
+        print("=== Gap metrics (consecutive pairs on buffer) ===")
+        pairs = result.pair_records
+        min_gaps = np.array([p.min_gap for p in pairs])
+        avg_margins = np.array([p.average_margin for p in pairs
+                                if p.average_margin is not None])
+        viol_integrals = np.array([p.violation_integral for p in pairs
+                                if p.violation_integral is not None])
 
-    p_min_threshold = pairs[0].g_min_threshold if pairs else float("nan")
-    print(f"  p_min threshold            : {p_min_threshold:.3f} m")
-    print(f"  Min instantaneous gap    : {min_gaps.min():.4f} m  "
-          f"(pair {int(np.argmin(min_gaps))})")
-    print(f"  Mean min gap per pair    : {min_gaps.mean():.4f} m")
-    n_violating = int(np.sum(min_gaps < p_min_threshold))
-    print(f"  Pairs violating p_min      : {n_violating} / {len(pairs)}")
-    if len(viol_integrals) > 0:
-        print(f"  Total violation integral   : {viol_integrals.sum():.6f} m·s")
-    if len(avg_margins) > 0:
-        print(f"  Mean average margin        : {avg_margins.mean():.4f} m")
+        p_min_threshold = pairs[0].g_min_threshold if pairs else float("nan")
+        print(f"  p_min threshold            : {p_min_threshold:.3f} m")
+        print(f"  Min instantaneous gap    : {min_gaps.min():.4f} m  "
+            f"(pair {int(np.argmin(min_gaps))})")
+        print(f"  Mean min gap per pair    : {min_gaps.mean():.4f} m")
+        n_violating = int(np.sum(min_gaps < p_min_threshold))
+        print(f"  Pairs violating p_min      : {n_violating} / {len(pairs)}")
+        if len(viol_integrals) > 0:
+            print(f"  Total violation integral   : {viol_integrals.sum():.6f} m·s")
+        if len(avg_margins) > 0:
+            print(f"  Mean average margin        : {avg_margins.mean():.4f} m")
 
 
 if __name__ == "__main__":

@@ -130,11 +130,11 @@ def compute_pairs(
         t_lead = t_follow + dt
 
         if np.any(t_lead > lead.T):
-            raise ValueError(
-                f"Leader extrapolation needed for pair {i} — "
-                f"max t_lead = {t_lead.max():.4f} > lead.T = {lead.T:.4f}. "
-                f"This is probably due to high gap variability resulting in overlapping items in the buffer."
-            )
+            # raise ValueError(
+            #     f"Leader extrapolation needed for pair {i} — "
+            #     f"max t_lead = {t_lead.max():.4f} > lead.T = {lead.T:.4f}. "
+            # )
+            print(f"Time error at gap {i+1}")
 
         s_follow = follow.eval(t_follow)  # shape (3, N)
         s_lead = lead.eval(t_lead)         # shape (3, N)

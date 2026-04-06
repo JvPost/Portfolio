@@ -43,12 +43,11 @@ $$\mathcal{T} = \bigl[(t_0, j^{(0)}, T^{(0)}), \; (t_1, j^{(1)}, T^{(1)}), \; \l
 
 where $t_n$ is the absolute start time of segment $n$, $j^{(n)}$ is the constant jerk value, and $T^{(n)}$ is its duration. The kinematic state at the start of each segment follows directly from the end state of the previous one. Segments are never modified or removed — only appended. This makes the full history available for analysis.
 
-![[Pasted image 20260331081131.png]]
-> *$a^{\text{up}}(t)$ over four skip events. $\Pi_1$ is the initial constant-velocity regime — zero acceleration. Each subsequent phase $\Pi_k$ begins at $t_{k-1}^{\text{rec}}$ with a acceleration ramp toward $A_{\max}$, held until skip $s_k$ is detected (red line), at which point the deceleration profile cancels the accumulated area $A_k$ and returns $a^{\text{up}}$ to zero. Note that $s_2$ accumulates more area than $s_1$ — the deceleration dip is correspondingly deeper.*
+![[Pasted image 20260404161625.png]]
 
 ### 2.3 Initial Condition
 
-Before the first skip, the timeline is empty. The belt runs at constant velocity $v_u$ with zero acceleration and zero jerk. This is a simplifying assumption for initialisation — no acceleration is accumulated before the first skip is detected. $\Pi_1$ in the diagram corresponds to this constant-velocity regime.
+At $t = 0$ the belt is at velocity $v_u$ with zero acceleration and zero jerk. The acceleration profile for $\Pi_1^{\text{acc}}$ is appended to $\mathcal{T}$ immediately — the belt begins building velocity surplus before the first skip is detected. $\Pi_1$ follows the same structure as every subsequent phase: acceleration segments are appended up to $s_1$, at which point $\Pi_1^{\text{dec}}$ is computed and appended. The first input can never trigger a skip (no slot has been filled before it), so $\Pi_1^{\text{acc}}$ always spans at least one full input transit.
 
 ### 2.4 Skip Times
 
@@ -83,9 +82,7 @@ $$t_i^{\text{in}} = \min \left\lbrace t > t_i^{\text{spawn}} \mid
 
 $\mathcal{W}_i$ is orthogonal to the phase decomposition $\Pi$: its boundaries are defined. In general, $t_i^{\text{spawn}}$ does not coincide with the start time of any segment in $\mathcal{T}$ — it falls in the interior of some segment $n$, i.e. $t_n < t_i^{\text{spawn}} < t_n + T^{(n)}$. Consequently $\mathcal{W}_i$ begins mid-segment and its boundaries do not align with those of any $\Pi_k$.
 
-![[Pasted image 20260401085700.png]]
-
-![[Pasted image 20260401085740.png]]
+![[Pasted image 20260404161839.png]]
 ### 2.7 Timeline Extension
 
 $\mathcal{T}$ is only populated up to $t_i^{\text{in}}$ after processing input $i$. Before input $i+1$ can be queried, $\mathcal{T}$ must be extended to cover at least $t_{i+1}^{\text{in}}$. The extension rule depends on whether input $i$ triggered a skip:
@@ -101,27 +98,51 @@ $\mathcal{T}$ is only populated up to $t_i^{\text{in}}$ after processing input $
 
 Each phase $\Pi_k$ is a contiguous subsequence of segments in $\mathcal{T}$ forming a complete jerk cycle. $\Pi_1$ is the degenerate case — a single zero-jerk segment corresponding to the initial constant-velocity regime. For $k \geq 2$, the segments of $\Pi_k$ are:
 
-$$[+j_{\max}, \; 0, \; -j_{\max}, \; 0^*, \; -j_{\max}, \; 0, \; +j_{\max}]$$
+$$[+j_{\max}, ; 0, ; -j_{\max}, ; 0^*, ; -j_{\max}, ; 0, ; +j_{\max}]$$
 
-where the first four segments are the acceleration $\Pi_k^{\text{acc}}$ (ramp up, hold at $a_{\max}$, ramp down, zero-jerk plateau) and the last three are the mirrored deceleration $\Pi_k^{\text{dec}}$ (ramp down, hold at $-a_{\max}$, ramp up). The hold segments collapse when $A_k$ is small enough that $a_{\max}$ is never saturated, reducing the sequence to $[+j_{\max}, \; -j_{\max}, \; 0^*, \; -j_{\max}, \; +j_{\max}]$.
+where the first four segments are the acceleration $\Pi_k^{\text{acc}}$ (ramp up, hold at $a_{\max}^{\text{acc}}$, ramp down, zero-jerk plateau) and the last three are the mirrored deceleration $\Pi_k^{\text{dec}}$ (ramp down, hold at $-a_{\max}$, ramp up). The hold segments collapse when the accumulated velocity surplus is small enough that $a_{\max}^{\text{acc}}$ or $a_{\max}$ is never saturated, reducing the sequence accordingly.
 
 The segments of $\Pi_k^{\text{acc}}$ are appended incrementally as inputs are processed. The duration of the plateau $0^*$ is not known in advance — it ends when $\delta_i = 1$ is detected. The segments of $\Pi_k^{\text{dec}}$ are appended in full at that moment.
 
-### 3.2 Phase Invariant
+### 3.2 Quantities at Skip Time
 
-The segments of $\Pi_k$ form a complete acceleration cycle: the belt starts and ends each phase at zero acceleration. This is expressed directly in terms of the stored tuples:
+When a skip is detected at $s_k$, two quantities characterise the state accumulated during $\Pi_k^{\text{acc}}$.
 
-$$\sum_{n \in \Pi_k} j^{(n)} T^{(n)} = 0 \qquad \forall\, k \geq 2$$
+**Acceleration at skip time.** The net change in acceleration over the acceleration phase:
 
-The **accumulated area** $A_k$ is the partial jerk sum over $\Pi_k^{\text{acc}}$:
+$$a_k = \sum_{n \in \Pi_k^{\text{acc}}} j^{(n)} T^{(n)}$$
 
-$$A_k = \sum_{n \in \Pi_k^{\text{acc}}} j^{(n)} T^{(n)}$$
+This has units m/s$^2$ and equals the instantaneous acceleration of the belt at $t = s_k$. If the ramp saturated and the belt has been holding at $a_{\max}^{\text{acc}}$, then $a_k = a_{\max}^{\text{acc}}$. If the skip was detected during the ramp, $a_k < a_{\max}^{\text{acc}}$.
 
-$A_k$ is the net velocity surplus built up before the skip. The segments of $\Pi_k^{\text{dec}}$ contribute exactly $-A_k$, satisfying the invariant. $A_k$ must not exceed the maximum permissible area:
+**Velocity surplus.** The integral of acceleration over the acceleration phase — equivalently, the area under the piecewise-linear acceleration curve:
 
-$$A_k \leq A_{\max} = v_{\max}^{\text{up}} - v_u$$
+$$\Delta v_k = \sum_{n \in \Pi_k^{\text{acc}}} \left[ a_n^{\text{start}}, T^{(n)} + \tfrac{1}{2}, j^{(n)} \bigl(T^{(n)}\bigr)^2 \right]$$
 
-where $v_{\max}^{\text{up}}$ is a tunable upstream speed ceiling, bounded above by the physical belt speed limit. Increasing $A_{\max}$ allows more effective skip compensation at the cost of a longer deceleration window and a stricter feasibility condition on the inter-arrival gap (Section 5.2). Note that $v_{\max}$ in the buffer analysis is a distinct quantity — the maximum speed permissible for objects transiting the buffer, set by physical constraints and not tunable.
+This has units m/s and equals $v^{\text{up}}(s_k) - v_u$, the velocity surplus that the deceleration must remove. Each term in the sum is the area of one segment: a rectangle $a_n^{\text{start}} \cdot T^{(n)}$ plus a triangle $\tfrac{1}{2}, j^{(n)} (T^{(n)})^2$, where $a_n^{\text{start}}$ is the acceleration at the start of segment $n$ (the end state of the previous segment, or zero for the first segment of $\Pi_k^{\text{acc}}$).
+
+### 3.3 Phase Invariants
+
+The segments of $\Pi_k$ form a complete acceleration cycle: the belt starts and ends each phase at zero acceleration and at velocity $v_u$. This imposes two invariants on the stored tuples.
+
+**Acceleration invariant.** The net jerk sum over all segments of $\Pi_k$ is zero:
+
+$$\sum_{n \in \Pi_k} j^{(n)} T^{(n)} = 0 \qquad \forall, k \geq 1$$
+
+This guarantees that $a^{\text{up}}$ returns to zero at the end of the phase.
+
+**Velocity invariant.** The net velocity change over all segments of $\Pi_k$ is zero:
+
+$$\sum_{n \in \Pi_k} \left[ a_n^{\text{start}}, T^{(n)} + \tfrac{1}{2}, j^{(n)} \bigl(T^{(n)}\bigr)^2 \right] = 0 \qquad \forall, k \geq 1$$
+
+This guarantees that $v^{\text{up}}$ returns to $v_u$ at the end of the phase. The acceleration invariant constrains the jerk ramp durations of $\Pi_k^{\text{dec}}$; the velocity invariant constrains its hold duration at $-a_{\max}$. Together they fully determine the deceleration profile given $a_k$ and $\Delta v_k$.
+
+### 3.4 Velocity Surplus Bound
+
+The velocity surplus must not exceed the maximum permissible value:
+
+$$\Delta v_k \leq \Delta v_{\max} = v_{\max}^{\text{up}} - v_u$$
+
+where $v_{\max}^{\text{up}}$ is a tunable upstream speed ceiling, bounded above by the physical belt speed limit. Increasing $\Delta v_{\max}$ allows more effective skip compensation at the cost of a longer deceleration window and a stricter feasibility condition on the inter-arrival gap (Section 5.2). Note that $v_{\max}$ in the buffer analysis is a distinct quantity — the maximum speed permissible for objects transiting the buffer, set by physical constraints and not tunable.
 
 ---
 
@@ -129,19 +150,23 @@ where $v_{\max}^{\text{up}}$ is a tunable upstream speed ceiling, bounded above 
 
 ### 4.1 Trigger
 
-When $\delta_i = 1$ is detected at $s_k = t_i^{\text{in}}$, the plateau $0^*$ is closed and $A_k$ is computed as the jerk sum over $\Pi_k^{\text{acc}}$. The segments of $\Pi_k^{\text{dec}}$ are immediately appended to $\mathcal{T}$, completing $\Pi_k$.
+When $\delta_i = 1$ is detected at $s_k = t_i^{\text{in}}$, the plateau $0^*$ is closed. The quantities $a_k$ and $\Delta v_k$ are computed from the segments of $\Pi_k^{\text{acc}}$. The segments of $\Pi_k^{\text{dec}}$ are immediately appended to $\mathcal{T}$, completing $\Pi_k$.
 
-### 4.2 Deceleration Segments
+### 4.2 Deceleration Profile
 
-The segments of $\Pi_k^{\text{dec}}$ mirror the acceleration: they ramp acceleration negatively using $-j_{\max}$, hold at $-a_{\max}$ if needed, then ramp back to zero. Their jerk sum satisfies:
+The deceleration segments mirror the acceleration: they ramp acceleration negatively using $-j_{\max}$, hold at $-a_{\max}$ if needed, then ramp back to zero. The deceleration must satisfy both phase invariants simultaneously:
 
-$$\sum_{n \in \Pi_k^{\text{dec}}} j^{(n)} T^{(n)} = -A_k$$
+$$\sum_{n \in \Pi_k^{\text{dec}}} j^{(n)} T^{(n)} = -a_k$$
 
-At $t_k^{\text{rec}}$ — the start time of the first segment of $\Pi_{k+1}$ — the segments of $\Pi_{k+1}^{\text{acc}}$ begin being appended to $\mathcal{T}$.
+$$\sum_{n \in \Pi_k^{\text{dec}}} \left[ a_n^{\text{start}}, T^{(n)} + \tfrac{1}{2}, j^{(n)} \bigl(T^{(n)}\bigr)^2 \right] = -\Delta v_k$$
 
-### 4.3 Per-Skip Area Budget
+The first equation sizes the jerk ramps to cancel $a_k$. The second equation sizes the hold at $-a_{\max}$ to cancel $\Delta v_k$. When $\Delta v_k$ is small enough that $a_{\max}$ is never saturated during deceleration, the hold segment collapses and the profile consists of ramps only.
 
-$A_k$ depends on how many inputs transited during $\Pi_k^{\text{acc}}$ before the skip was triggered. Because the skip may be detected before the plateau is reached, $A_k \leq A_{\max}$. The deceleration is sized exactly to match $A_k$, not $A_{\max}$.
+At $t_k^{\text{rec}}$ — the end time of the last segment of $\Pi_k^{\text{dec}}$ — the belt has returned to $(v_u, 0)$ and the segments of $\Pi_{k+1}^{\text{acc}}$ begin being appended to $\mathcal{T}$.
+
+### 4.3 Per-Skip Budget
+
+$\Delta v_k$ depends on how many inputs transited during $\Pi_k^{\text{acc}}$ before the skip was triggered, and on whether the acceleration ramp had saturated at $a_{\max}^{\text{acc}}$. Because the skip may be detected before the ramp completes, $\Delta v_k \leq \Delta v_{\max}$. The deceleration is sized exactly to match $a_k$ and $\Delta v_k$, not their maxima.
 
 ---
 
@@ -155,9 +180,9 @@ $$t_k^{\text{rec}} \leq t_j^{\text{in}}$$
 
 ### 5.2 Minimum Inter-Arrival Gap
 
-The recovery duration is determined by $A_k$, $j_{\max}$, and $a_{\max}$:
+The recovery duration is determined by $a_k$, $\Delta v_k$, $j_{\max}$, and $a_{\max}$:
 
-$$\Delta t_k^{\text{rec}} = f\bigl(A_k, j_{\max}, a_{\max}\bigr)$$
+$$\Delta t_k^{\text{rec}} = f\bigl(a_k, \Delta v_k, j_{\max}, a_{\max}\bigr)$$
 
 The feasibility condition requires a minimum inter-arrival gap of $\Delta t_k^{\text{rec}}$ between $s_k$ and $t_j^{\text{in}}$. When violated, the feedforward scheme is **infeasible** for this skip event — the deceleration cannot complete in time and the entry state will be non-nominal.
 
@@ -166,33 +191,37 @@ The feasibility condition requires a minimum inter-arrival gap of $\Delta t_k^{\
 The inter-arrival gap is a random variable whose distribution depends on $\sigma_u$. Higher upstream variability increases the probability of short gaps following a skip, making infeasibility more likely. The scheme degrades gracefully: a non-nominal entry state is flagged and the buffer solver falls back to handling it directly. Under the AR(1) model, gaps following a large-gap skip are expected to be above average, making infeasibility less likely immediately after severe skips — a structural property absent from the i.i.d. model.
 
 ---
+
 ## 6. Notation Summary
 
-| Symbol                  | Meaning                                                                                                   |
-| ----------------------- | --------------------------------------------------------------------------------------------------------- |
-| $\mathcal{T}$           | Jerk timeline — append-only list of constant-jerk segments                                                |
-| $\mathcal{T}\|_{[a,b]}$ | Projection of $\mathcal{T}$ onto time interval $[a, b]$                                                   |
-| $n$                     | Segment index into $\mathcal{T}$                                                                          |
-| $t_n$                   | Absolute start time of segment $n$                                                                        |
-| $j^{(n)}$               | Constant jerk value of segment $n$                                                                        |
-| $T^{(n)}$               | Duration of segment $n$                                                                                   |
-| $\Pi$                   | Ordered list of inter-skip phases                                                                         |
-| $\Pi_k$                 | $k$-th inter-skip phase; contiguous subsequence $\mathcal{T}[n_k^{\text{start}} \ldots n_k^{\text{end}}]$ |
-| $\Pi_k^{\text{acc}}$    | Acceleration segments of $\Pi_k$ — appended incrementally up to $s_k$                                     |
-| $\Pi_k^{\text{dec}}$    | Deceleration segments of $\Pi_k$ — appended in full at $s_k$                                              |
-| $s_k$                   | Time of the $k$-th skip event; $s_k = t_i^{\text{in}}$ where $\delta_i = 1$                               |
-| $t_k^{\text{rec}}$      | Start time of the first segment of $\Pi_{k+1}$; belt restored to $v_u$, $a^{\text{up}} = 0$               |
-| $A_k$                   | Accumulated area of $\Pi_k$; $\sum_{n \in \Pi_k^{\text{acc}}} j^{(n)} T^{(n)}$                            |
-| $A_{\max}$              | Maximum permissible accumulated area; $v_{\max}^{\text{up}} - v_u$                                        |
-| $j^{\text{up}}(t)$      | Upstream jerk signal                                                                                      |
-| $a^{\text{up}}(t)$      | Upstream acceleration; derived from $\mathcal{T}$ by integrating $j^{\text{up}}$                          |
-| $v^{\text{up}}(t)$      | Upstream velocity; $v_u + \int a^{\text{up}} \, d\tau$                                                    |
-| $v_{\max}^{\text{up}}$  | Tunable upstream speed ceiling                                                                            |
-| $v_{\max}$              | Maximum object speed in the buffer (physical constraint, not tunable)                                     |
-| $t_i^{\text{spawn}}$    | Absolute spawn time of input $i$                                                                          |
-| $t_i^{\text{in}}$       | Absolute buffer entry time of input $i$                                                                   |
-| $\delta_i$              | Skip indicator for input $i$                                                                              |
-| $j_{\max}$              | Maximum jerk                                                                                              |
-| $a_{\max}$              | Maximum acceleration                                                                                      |
-| $v_u$                   | Nominal upstream belt velocity                                                                            |
-| $L_{\text{up}}$         | Upstream control distance                                                                                 |
+| Symbol                  | Meaning                                                                                                                    |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| $\mathcal{T}$           | Jerk timeline — append-only list of constant-jerk segments                                                                 |
+| $\mathcal{T}\|_{[a,b]}$ | Projection of $\mathcal{T}$ onto time interval $[a, b]$                                                                    |
+| $n$                     | Segment index into $\mathcal{T}$                                                                                           |
+| $t_n$                   | Absolute start time of segment $n$                                                                                         |
+| $j^{(n)}$               | Constant jerk value of segment $n$                                                                                         |
+| $T^{(n)}$               | Duration of segment $n$                                                                                                    |
+| $a_n^{\text{start}}$    | Acceleration at the start of segment $n$; end state of segment $n-1$, or $0$ for the first segment of $\Pi_k^{\text{acc}}$ |
+| $\Pi$                   | Ordered list of inter-skip phases                                                                                          |
+| $\Pi_k$                 | $k$-th inter-skip phase; contiguous subsequence $\mathcal{T}[n_k^{\text{start}} \ldots n_k^{\text{end}}]$                  |
+| $\Pi_k^{\text{acc}}$    | Acceleration segments of $\Pi_k$ — appended incrementally up to $s_k$                                                      |
+| $\Pi_k^{\text{dec}}$    | Deceleration segments of $\Pi_k$ — appended in full at $s_k$                                                               |
+| $s_k$                   | Time of the $k$-th skip event; $s_k = t_i^{\text{in}}$ where $\delta_i = 1$                                                |
+| $t_k^{\text{rec}}$      | End time of $\Pi_k^{\text{dec}}$; belt restored to $(v_u,, 0)$                                                             |
+| $a_k$                   | Acceleration at skip time; $\sum_{n \in \Pi_k^{\text{acc}}} j^{(n)} T^{(n)}$ (m/s²)                                        |
+| $\Delta v_k$            | Velocity surplus at skip time; area under acceleration curve over $\Pi_k^{\text{acc}}$ (m/s)                               |
+| $\Delta v_{\max}$       | Maximum permissible velocity surplus; $v_{\max}^{\text{up}} - v_u$ (m/s)                                                   |
+| $j^{\text{up}}(t)$      | Upstream jerk signal                                                                                                       |
+| $a^{\text{up}}(t)$      | Upstream acceleration; derived from $\mathcal{T}$ by integrating $j^{\text{up}}$                                           |
+| $v^{\text{up}}(t)$      | Upstream velocity; $v_u + \int a^{\text{up}} , d\tau$                                                                      |
+| $v_{\max}^{\text{up}}$  | Tunable upstream speed ceiling                                                                                             |
+| $v_{\max}$              | Maximum object speed in the buffer (physical constraint, not tunable)                                                      |
+| $t_i^{\text{spawn}}$    | Absolute spawn time of input $i$                                                                                           |
+| $t_i^{\text{in}}$       | Absolute buffer entry time of input $i$                                                                                    |
+| $\delta_i$              | Skip indicator for input $i$                                                                                               |
+| $j_{\max}$              | Maximum jerk                                                                                                               |
+| $a_{\max}$              | Maximum deceleration magnitude (used in $\Pi_k^{\text{dec}}$)                                                              |
+| $a_{\max}^{\text{acc}}$ | Maximum acceleration magnitude (used in $\Pi_k^{\text{acc}}$)                                                              |
+| $v_u$                   | Nominal upstream belt velocity                                                                                             |
+| $L_{\text{up}}$         | Upstream control distance                                                                                                  |
