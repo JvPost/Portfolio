@@ -29,7 +29,8 @@ def main():
         cfg = yaml.safe_load(f)
 
     solver_name = cfg.get("solver", "scurve")
-    solver = SCurveSolver() if solver_name == "scurve" else QuinticSolver()
+    solver = SCurveSolver()
+    # solver = QuinticSolver()
     cfg["solver_name"] = solver_name
 
     print(f"Running simulation: solver={solver_name}  seed={args.seed}  "
@@ -37,7 +38,7 @@ def main():
     result = KSBSimulation(cfg=cfg, solver=solver).run(seed=args.seed)
     print(f"  assigned_slots : {result.assigned_slots}")
     print(f"  skip_indices   : {result.skip_indices}")
-    print(f"  violations     : {sum(1 for p in result.pair_records if p.min_gap is not None and p.min_gap < cfg['L_buffer'] / cfg['N'] * 2)}")
+    print(f"  violations     : {sum(1 for p in result.pair_records if p.min_gap is not None and p.min_gap < cfg['L_buffer'] / cfg['n_buffer_seg'] * 2)}")
     print("Launching viewer…  SPACE to start, ESC to quit.")
 
     KSBViewer(result, cfg).run()

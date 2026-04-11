@@ -264,7 +264,8 @@ class PreAccelerateControl(UpstreamController):
         self._t_last_recovery: float = 0.0
 
         # Pi_1^acc starts immediately
-        self._append_acceleration(0.0)
+        if a_max_acc > 0:
+            self._append_acceleration(0.0)
 
     # ------------------------------------------------------------------
     # Public
@@ -329,7 +330,7 @@ class PreAccelerateControl(UpstreamController):
         else:
             # Trapezoidal: ramp up -> hold -> ramp down
             dv_hold = dv_max - 2 * dv_per_ramp
-            t_hold = dv_hold / a_acc
+            t_hold = dv_hold / a_acc if a_acc > 0 else 1e6
             self._append(t_now, +j, t_ramp)
             t_now += t_ramp
             self._append(t_now, 0.0, t_hold)

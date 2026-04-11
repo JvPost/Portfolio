@@ -1,18 +1,23 @@
 solver: scurve
-jmax: 100.0
+# solver: quintic
+jmax: 200.0
 Vmax: 3.0
 Amax: 8.5
 L_upstream: 2.0
-L_buffer: 2.5
+L_buffer: 2.0
+L_reg: 2.0
 L_downstream: 2.0
 input_length: 0.32
-N: 5
-slot_length: 0.60
-input_gap_mean: 0.60
+n_buffer_seg: 4
+n_reg_seg: 4
+
+slot_length: 0.6
+input_gap_mean: 0.6
+
 input_gap_std: 0.05
 arrival_rate_ppm: 120
-slot_rate_ppm: 126
+slot_rate_ppm: 132
 batch: 100
 
-start_margin: 0.65 # the fraction of the input length, that must be on the buffer, before buffer control may commence.
+start_margin: 1 # the fraction of the input length, that must be on the buffer, before buffer control may commence.
 end_margin: 0.0

@@ -32,15 +32,15 @@ class KSBSimulation:
         self.L_downstream = float(cfg.get("L_downstream", 1.0))
 
         self.input_length = float(cfg.get("input_length", 0.32))
-        self.N = int(cfg.get("N", 5))
+        self.n_buffer_seg = int(cfg.get("n_buffer_seg", 5))
 
         Lmin_factor = float(cfg.get("Lmin_factor", 1.25))
         Lmin = Lmin_factor * self.input_length
-        Ls = np.array(self.N * [self.L_buffer / self.N])
+        Ls = np.array(self.n_buffer_seg * [self.L_buffer / self.n_buffer_seg])
         assert np.all(Ls >= Lmin), \
             "All buffer sections must be at least Lmin_factor * input_length"
 
-        self.min_gap_on_buffer = self.L_buffer / self.N + self.input_length
+        self.min_gap_on_buffer = self.L_buffer / self.n_buffer_seg + self.input_length
 
         self.slot_length = float(cfg.get("slot_length", 0.40))
         self.gap_mean = float(cfg.get("input_gap_mean", 0.80))
@@ -76,9 +76,15 @@ class KSBSimulation:
         ])
         self.policy = Policy(input_length=self.input_length)
 
-        # self._u_control = ConstantVelocityControl(self.vu)
-        self._u_control = PreAccelerateControl(self.vu, self.jmax, self.Amax, 
-                                               1.0, self.Vmax)
+        self._u_control = ConstantVelocityControl(self.vu)
+        # self._u_control = PreAccelerateControl(vu = self.vu, 
+        #                                        j_max = self.jmax * 1.0, 
+        #                                        a_max = self.Amax, 
+        #                                        a_max_acc = 2.0,
+        #                                     #    v_max_up= self.vu + (self.Vmax - self.vu) * .5
+        #                                         v_max_up=self.Vmax
+        #                                        )
+                                               
         self._d_solver = LinearTrajectorySolver()
 
     def run(self, seed: Optional[int] = None) -> SimulationResult:
@@ -91,6 +97,9 @@ class KSBSimulation:
         x0_upstream = np.array([0.0, vu, 0.0])
 
         # 1) Spawn times
+        # t_spawn = utils.input_spawn_times(batch = self.batch, v0=vu, 
+        #                                   mean=self.gap_mean, std=self.gap_std,
+        #                                   min=self.input_length, seed=seed)
         t_spawn = utils.input_spawn_times_ar1(
             self.batch,
             v0=vu,

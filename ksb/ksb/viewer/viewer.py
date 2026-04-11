@@ -100,7 +100,7 @@ class KSBViewer:
         self.L_tot  = self.L_up + self.L_buf + self.L_dn
 
         self.input_length = float(cfg.get("input_length", 0.32))
-        self.N = int(cfg.get("N", 5))
+        self.n_buffer_seg = int(cfg.get("n_buffer_seg", 5))
 
         # ------------------------------------------------------------------
         # Simulation timing
@@ -116,7 +116,7 @@ class KSBViewer:
         # Physics
         # ------------------------------------------------------------------
         # gap_min matches KSBSimulation.min_gap_on_buffer
-        self.gap_min = self.L_buf / self.N * 2
+        self.gap_min = self.L_buf / self.n_buffer_seg * 2
 
         slot_rate_ppm = float(cfg.get("slot_rate_ppm", 180))
         slot_gap    = float(cfg.get("slot_length",    0.40))
@@ -268,9 +268,9 @@ class KSBViewer:
                          (self.x_dn_start,  y), (self.x_dn_start,  y + h), 1)
 
         # Buffer section dividers (N sections)
-        section_len = self.L_buf / self.N
+        section_len = self.L_buf / self.n_buffer_seg
         div_color = (110, 120, 160)
-        for k in range(1, self.N):
+        for k in range(1, self.n_buffer_seg):
             px = MARGIN + _px(self.L_up + k * section_len, self.ppm)
             pygame.draw.line(screen, div_color, (px, y + 4), (px, y + h - 4), 1)
 

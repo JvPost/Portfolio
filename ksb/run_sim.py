@@ -29,7 +29,8 @@ def main():
         cfg = yaml.safe_load(f)
 
     solver_name = cfg.get("solver", "scurve")
-    solver = SCurveSolver() if solver_name == "scurve" else QuinticSolver()
+    # solver = QuinticSolver()
+    solver = SCurveSolver()
 
     print(f"Solver : {solver_name}")
     print(f"Seed   : {args.seed}")
