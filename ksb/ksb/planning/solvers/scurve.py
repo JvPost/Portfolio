@@ -37,7 +37,9 @@ class SCurveSolver(IProfileSolver):
 
     def solve(self, pi, vi, pf, vf, T, bounds, policy) -> CompositeTrajectory:
         # pi is the starting position; the polynomial is expressed relative to pi=0
-        Xf = pf  # total displacement to cover (pi assumed 0)
+        assert pi < pf, "Cannot be negative position delta"
+        
+        Xf = pf - pi  # total displacement to cover (pi assumed 0)
         T_m = T
 
         j_max = bounds[J_MAX]

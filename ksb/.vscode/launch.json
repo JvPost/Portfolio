@@ -6,16 +6,19 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/run_sim.py",
-            "args": ["--seed", "42"],
+            "args": [
+                "--seed",
+                "42"
+            ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}"
         },
         {
-            "name": "run_debug",
+            "name": "run_registrar_debug",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/run_debug.py",
-            "args": ["--seed", "42"],
+            "program": "${workspaceFolder}/run_registrar_debug.py",
+            "args": [],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}"
         },
@@ -24,7 +27,10 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/run_viewer.py",
-            "args": ["--seed", "42"],
+            "args": [
+                "--seed",
+                "42"
+            ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}"
         },

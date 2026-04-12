@@ -29,10 +29,12 @@ class KSBSimulation:
 
         self.L_upstream = float(cfg.get("L_upstream", 1.0)) # the length of actual upstream
         self.L_buffer = float(cfg.get("L_buffer", 2.0))
+        self.L_reg = float(cfg.get("L_registrar", 3.0))
         self.L_downstream = float(cfg.get("L_downstream", 1.0))
 
         self.input_length = float(cfg.get("input_length", 0.32))
         self.n_buffer_seg = int(cfg.get("n_buffer_seg", 5))
+        self.n_reg_seg = int(cfg.get("n_reg_seg", 5))
 
         Lmin_factor = float(cfg.get("Lmin_factor", 1.25))
         Lmin = Lmin_factor * self.input_length
@@ -87,6 +89,9 @@ class KSBSimulation:
                                                
         self._d_solver = LinearTrajectorySolver()
 
+        ### EXPERIMENTAL
+        self.v_buff_out = float(cfg.get('v_buff_out', 2.0)) # v^{BR}
+
     def run(self, seed: Optional[int] = None) -> SimulationResult:
         vu, vd = self.vu, self.vd
         L_upstream, L_downstream = self.L_upstream, self.L_downstream
@@ -100,6 +105,7 @@ class KSBSimulation:
         # t_spawn = utils.input_spawn_times(batch = self.batch, v0=vu, 
         #                                   mean=self.gap_mean, std=self.gap_std,
         #                                   min=self.input_length, seed=seed)
+
         t_spawn = utils.input_spawn_times_ar1(
             self.batch,
             v0=vu,

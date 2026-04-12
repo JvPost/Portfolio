@@ -141,7 +141,7 @@ arrives there.
 
 ### 2.4 The KSB
 
-The KSB is a servo-driven buffer segment of length $L$ that sits between upstream and
+The KSB is a servo-driven buffer segment of length $L^B$ that sits between upstream and
 downstream. Each object enters the KSB at approximately $v_u$ and must exit at the
 handoff point synchronized to an assigned downstream slot. The KSB achieves this by
 executing a jerk-limited motion profile over the object's transit, subject to kinematic
@@ -154,8 +154,8 @@ $$
 where $v_i(t)$, $a_i(t)$, and $\dot{a}_i(t)$ are the velocity, acceleration, and jerk of
 object $i$ at time $t$. The position of object $i$ along the buffer axis is $p_i(t)$.
 
-A batch of $B$ objects passes through the KSB in sequence. Objects are indexed
-$i = 1, \ldots, B$, where $i = 1$ is the leading object and $i = B$ is the last. The
+A batch of $b$ objects passes through the KSB in sequence. Objects are indexed
+$i = 1, \ldots, b$, where $i = 1$ is the leading object and $i = b$ is the last. The
 instantaneous gap between consecutive objects $i$ and $i+1$ while both are simultaneously
 on the KSB is
 
@@ -431,7 +431,7 @@ Aggregating across the batch, the primary performance metric is the **violation
 probability per object pair**:
 
 $$
-\varepsilon = \frac{1}{B-1} \sum_{i=1}^{B-1} \mathbf{1}\!\left[\min_t\, g_i(t) < g_{\min}\right]
+\varepsilon = \frac{1}{b-1} \sum_{i=1}^{b-1} \mathbf{1}\!\left[\min_t\, g_i(t) < g_{\min}\right]
 $$
 
 This is the empirical fraction of object pairs for which the clearance constraint was
