@@ -19,9 +19,10 @@ class KSBSimulation:
     Receives stochastic item arrivals and plans jerk-limited trajectories to
     deliver each item to a fixed, deterministic slot schedule.
     """
-    def __init__(self, cfg: dict, solver: IProfileSolver) -> None:
+    def __init__(self, cfg: dict) -> None:
         self.cfg = cfg
-        self.solver = solver
+        self.solver_name = cfg.get("solver", "")
+        self.solver = utils.get_solver_from_name(self.solver_name)
 
         self.jmax = float(cfg["jmax"])
         self.Vmax = float(cfg.get("Vmax", 3.0))
@@ -42,11 +43,11 @@ class KSBSimulation:
         assert np.all(Ls >= Lmin), \
             "All buffer sections must be at least Lmin_factor * input_length"
 
-        self.min_gap_on_buffer = self.L_buffer / self.n_buffer_seg + self.input_length
-
         self.slot_length = float(cfg.get("slot_length", 0.40))
         self.gap_mean = float(cfg.get("input_gap_mean", 0.80))
         self.gap_std = float(cfg.get("input_gap_std", 0.05))
+        # self.gap_min = self.L_buffer / self.n_buffer_seg + self.input_length
+        self.gap_min = 2 * self.L_buffer / self.n_buffer_seg
 
         arrival_rate_ppm = float(cfg.get("arrival_rate_ppm", 180))
         slot_rate_ppm = float(cfg.get("slot_rate_ppm", 180))
@@ -57,6 +58,11 @@ class KSBSimulation:
 
         self.vu = self.ru * self.gap_mean
         self.vd = self.rd * self.slot_length
+        ### EXPERIMENTAL
+        # TODO: This is a good variable to optimize over as well, when we chose to optimize the entire KSB system party won a supermajority.
+        self.v_buff_out = float(cfg.get('v_buff_out', 2.0)) # v^{BR}
+        assert self.v_buff_out > self.vd
+
         self.slot_period = self.slot_length / self.vd
 
         self.batch = int(cfg.get("batch", 5))
@@ -65,16 +71,17 @@ class KSBSimulation:
         end_margin = float(cfg.get("end_margin", 0.0))
 
         assert end_margin == 0.0, "non zero end_margin not implemented yet"
-        self.L_buffer_ctrl = self.L_buffer - self.input_length * start_margin # buffer control length
-
         self.L_upstream_ctrl = self.L_upstream + start_margin * self.input_length # The length over which usptream control active
+
+        self.L_buffer_ctrl = self.L_buffer - (self.input_length * start_margin) # buffer control length
+        
 
         # bounds as numpy array: [j_max, A_max, V_max, gap_min]
         self.bounds = np.array([
             self.jmax,
             self.Amax,
             self.Vmax,
-            self.min_gap_on_buffer,
+            self.gap_min,
         ])
         self.policy = Policy(input_length=self.input_length)
 
@@ -82,15 +89,14 @@ class KSBSimulation:
         # self._u_control = PreAccelerateControl(vu = self.vu, 
         #                                        j_max = self.jmax * 1.0, 
         #                                        a_max = self.Amax, 
-        #                                        a_max_acc = 2.0,
+        #                                        a_max_acc = 0.5,
         #                                     #    v_max_up= self.vu + (self.Vmax - self.vu) * .5
-        #                                         v_max_up=self.Vmax
+        #                                         v_max_up=1.5
         #                                        )
                                                
         self._d_solver = LinearTrajectorySolver()
 
-        ### EXPERIMENTAL
-        self.v_buff_out = float(cfg.get('v_buff_out', 2.0)) # v^{BR}
+        
 
     def run(self, seed: Optional[int] = None) -> SimulationResult:
         vu, vd = self.vu, self.vd
@@ -166,7 +172,7 @@ class KSBSimulation:
         downstream_T = L_downstream / vd
 
         for i, tf in enumerate(buffer_T_array):
-            sb_traj = buffer_trajectories[i]
+            buffer_traj = buffer_trajectories[i]
             d_traj = self._d_solver.solve(
                 pi=0.0, vi=vd, pf=L_downstream, vf=vd, T=downstream_T,
                 bounds=bounds, policy=policy,
@@ -175,30 +181,50 @@ class KSBSimulation:
             comp_traj = CompositeTrajectory(
                 x0=x0_upstream,
                 T=total_T,
-                segments=(upstream_ctrl_trajectories[i], sb_traj, d_traj),
+                segments=(upstream_ctrl_trajectories[i], buffer_traj, d_traj),
             )
             total_trajectories.append(comp_traj)
 
         # 6) pair record 
-        input_delta_t = np.diff(t_spawn)
+        p_window_start = L_upstream
+        p_window_end = L_upstream + self.L_buffer + self.input_length
+        
 
-        # t_window_start = np.array([t.T for t in upstream_trajectories])[1:]
-        t_window_start = np.array([t.find_time_at_position(L_upstream) for t in upstream_ctrl_trajectories])[1:]
+        t_i_boundary_upstream_buffer = np.array(
+            [traj.find_time_at_position(p_window_start) for traj in total_trajectories]
+            )
 
-        t_window_end = t_window_start + buffer_T_array[:-1]
+        input_delta_t = np.diff(t_spawn + t_i_boundary_upstream_buffer) 
+        
+        # Relative time windows for i and j = i+1. We start keeping track of time
+        # when input j enters the buffer. 
+        t_j_window_start = np.array(t_i_boundary_upstream_buffer[1:])
+
+        # We stop keeping track of time when input i's trailing edge leaves the buffer (p_window_end)
+        # Since local time start with input $j$ and ends with a position for input $i$,
+        # we have to substract the relative time difference.
+        t_j_window_end   = np.array(
+            [traj.find_time_at_position(p_window_end) for traj in total_trajectories[:-1]]
+        ) - input_delta_t
+
+        # Check some of the logic. 
+        assert np.all(t_j_window_end <= np.array([traj.T for traj in total_trajectories[1:]])), \
+            "t_window_end exceeds follower trajectory duration — overtake detected"
+        assert np.all(t_j_window_end > t_j_window_start), \
+            "t_window_end <= t_window_start — degenerate or inverted window"
 
         pairs: List[PairRecord] = []
         if self.batch > 1:
             pairs = compute_pairs(
                 trajectories=total_trajectories,
                 delta_t=input_delta_t,
-                t_rel_start=t_window_start,
-                t_rel_end=t_window_end,
+                t_rel_start=t_j_window_start,
+                t_rel_end=t_j_window_end,
                 n_points=1200,
             )
 
             for p in pairs:
-                p.compute_integrals(g_min=self.min_gap_on_buffer)
+                p.compute_integrals(g_min=self.gap_min)
 
         return SimulationResult(
             cfg=self.cfg,

@@ -130,16 +130,18 @@ def compute_pairs(
         t_lead = t_follow + dt
 
         if np.any(t_lead > lead.T):
-            # raise ValueError(
-            #     f"Leader extrapolation needed for pair {i} — "
-            #     f"max t_lead = {t_lead.max():.4f} > lead.T = {lead.T:.4f}. "
-            # )
+            raise ValueError(
+                f"Leader extrapolation needed for pair {i} — "
+                f"max t_lead = {t_lead.max():.4f} > lead.T = {lead.T:.4f}. "
+            )
             print(f"Time error at gap {i+1}")
 
         s_follow = follow.eval(t_follow)  # shape (3, N)
         s_lead = lead.eval(t_lead)         # shape (3, N)
 
-        p = s_lead[P] - s_follow[P]
+        delta_g = s_lead - s_follow
+
+        delta_p = s_lead[P] - s_follow[P]
         delta_v = s_lead[V] - s_follow[V]
         delta_a = s_lead[A] - s_follow[A]
 
@@ -148,7 +150,7 @@ def compute_pairs(
             lead=lead,
             follow=follow,
             t=t_follow,
-            gap=p,
+            gap=delta_p,
             delta_v=delta_v,
             delta_a=delta_a,
             delta_t=dt,

@@ -29,15 +29,12 @@ def main():
         cfg = yaml.safe_load(f)
 
     solver_name = cfg.get("solver", "scurve")
-    # solver = QuinticSolver()
-    solver = SCurveSolver()
-
     print(f"Solver : {solver_name}")
     print(f"Seed   : {args.seed}")
     print(f"Batch  : {cfg['batch']}")
     print()
 
-    result = KSBSimulation(cfg=cfg, solver=solver).run(seed=args.seed)
+    result = KSBSimulation(cfg=cfg).run(seed=args.seed)
 
     # ── Slot assignment ──────────────────────────────────────────────────────
     print("=== Slot assignment ===")

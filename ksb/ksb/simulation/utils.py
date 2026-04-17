@@ -8,6 +8,8 @@ from scipy.special import ndtr, ndtri
 
 from ksb.motion.trajectories import TrajectoryProfile
 from ksb.planning.contracts import IProfileSolver, InfeasibleError, SlotAssignmentError, Policy
+from ksb.planning.solvers.quintic import QuinticSolver
+from ksb.planning.solvers.scurve import SCurveSolver
 
 
 def input_spawn_times(
@@ -331,7 +333,15 @@ def get_next_slot(
         time_horizon = slot_time - t_control_start
 
         try:
-            traj = solver.solve(0.0, vi, L_buffer_ctrl, vd, time_horizon, bounds, policy)
+            traj : TrajectoryProfile = solver.solve(0.0, vi, L_buffer_ctrl, vd, time_horizon, bounds, policy)
             return slot_idx, traj
         except InfeasibleError:
             continue
+
+def get_solver_from_name(n) -> IProfileSolver:
+    if n == 'quintic':
+        return QuinticSolver()
+    elif n == 'scurve':
+        return SCurveSolver()
+    else:
+        raise NameError("unknown solver")
