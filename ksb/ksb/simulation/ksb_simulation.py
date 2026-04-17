@@ -98,7 +98,7 @@ class KSBSimulation:
                                                a_max = self.Amax, 
                                                a_max_acc = 0.5,
                                             #    v_max_up= self.vu + (self.Vmax - self.vu) * .5
-                                                v_max_up=2.
+                                                v_max_up=1.5
                                                )
                                                
         self._d_solver = LinearTrajectorySolver()
