@@ -85,14 +85,14 @@ class KSBSimulation:
         ])
         self.policy = Policy(input_length=self.input_length)
 
-        self._u_control = ConstantVelocityControl(self.vu)
-        # self._u_control = PreAccelerateControl(vu = self.vu, 
-        #                                        j_max = self.jmax * 1.0, 
-        #                                        a_max = self.Amax, 
-        #                                        a_max_acc = 0.5,
-        #                                     #    v_max_up= self.vu + (self.Vmax - self.vu) * .5
-        #                                         v_max_up=1.5
-        #                                        )
+        # self._u_control = ConstantVelocityControl(self.vu)
+        self._u_control = PreAccelerateControl(vu = self.vu, 
+                                               j_max = self.jmax * 1.0, 
+                                               a_max = self.Amax, 
+                                               a_max_acc = 0.5,
+                                            #    v_max_up= self.vu + (self.Vmax - self.vu) * .5
+                                                v_max_up=1.5
+                                               )
                                                
         self._d_solver = LinearTrajectorySolver()
 
