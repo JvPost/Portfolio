@@ -58,6 +58,7 @@ class KSBSimulation:
 
         self.vu = self.ru * self.gap_mean
         self.vd = self.rd * self.slot_length
+
         ### EXPERIMENTAL
         # TODO: This is a good variable to optimize over as well, when we chose to optimize the entire KSB system party won a supermajority.
         self.v_buff_out = float(cfg.get('v_buff_out', 2.0)) # v^{BR}
@@ -71,9 +72,15 @@ class KSBSimulation:
         end_margin = float(cfg.get("end_margin", 0.0))
 
         assert end_margin == 0.0, "non zero end_margin not implemented yet"
-        self.L_upstream_ctrl = self.L_upstream + start_margin * self.input_length # The length over which usptream control active
-
+        self.L_upstream_ctrl = self.L_upstream + (start_margin * self.input_length) # The length over which usptream control active
         self.L_buffer_ctrl = self.L_buffer - (self.input_length * start_margin) # buffer control length
+
+        ### EXPERIMENTAL 
+        # registry hack
+        self.L_buffer_end_offset = ( self.L_buffer / self.n_buffer_seg - self.input_length ) 
+        self.T_buffer_end_offset = self.L_buffer_end_offset / self.vd
+
+        self.L_buffer_ctrl = self.L_buffer_ctrl - self.L_buffer_end_offset
         
 
         # bounds as numpy array: [j_max, A_max, V_max, gap_min]
@@ -85,14 +92,14 @@ class KSBSimulation:
         ])
         self.policy = Policy(input_length=self.input_length)
 
-        self._u_control = ConstantVelocityControl(self.vu)
-        # self._u_control = PreAccelerateControl(vu = self.vu, 
-        #                                        j_max = self.jmax * 1.0, 
-        #                                        a_max = self.Amax, 
-        #                                        a_max_acc = 0.5,
-        #                                     #    v_max_up= self.vu + (self.Vmax - self.vu) * .5
-        #                                         v_max_up=1.5
-        #                                        )
+        # self._u_control = ConstantVelocityControl(self.vu)
+        self._u_control = PreAccelerateControl(vu = self.vu, 
+                                               j_max = self.jmax * 1.0, 
+                                               a_max = self.Amax, 
+                                               a_max_acc = 0.5,
+                                            #    v_max_up= self.vu + (self.Vmax - self.vu) * .5
+                                                v_max_up=2.
+                                               )
                                                
         self._d_solver = LinearTrajectorySolver()
 
@@ -139,7 +146,8 @@ class KSBSimulation:
 
             slot_idx, buffer_traj = utils.get_next_slot(t_in, slot_idx, self.slot_length, 
                                             v_in, self.vd, L_buffer_ctrl, self.bounds, 
-                                            self.policy, self.solver)
+                                            self.policy, self.solver, 
+                                            t_offset=-self.T_buffer_end_offset)
             
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1
@@ -156,7 +164,7 @@ class KSBSimulation:
             prev_slot_idx = slot_idx
 
         assigned_slot_times = assigned_slots * slot_period
-        buffer_T_array = assigned_slot_times - t_control_start
+        buffer_T_array = assigned_slot_times - t_control_start - self.T_buffer_end_offset
 
         # 4) Phase errors
         projected_no_corr = t_spawn + (L_upstream + self.L_buffer) / vu
@@ -177,11 +185,17 @@ class KSBSimulation:
                 pi=0.0, vi=vd, pf=L_downstream, vf=vd, T=downstream_T,
                 bounds=bounds, policy=policy,
             )
-            total_T = t_duration_upstream[i] + tf + downstream_T
+            total_T = t_duration_upstream[i] + tf + downstream_T + self.T_buffer_end_offset
+
+            r_traj = self._d_solver.solve(
+                pi=.0, vi=vd, pf=self.L_buffer_end_offset, vf=vd, 
+                T=self.T_buffer_end_offset, bounds=bounds, policy=policy
+            )
+
             comp_traj = CompositeTrajectory(
                 x0=x0_upstream,
                 T=total_T,
-                segments=(upstream_ctrl_trajectories[i], buffer_traj, d_traj),
+                segments=(upstream_ctrl_trajectories[i], buffer_traj, r_traj, d_traj),
             )
             total_trajectories.append(comp_traj)
 
@@ -205,7 +219,7 @@ class KSBSimulation:
         # we have to substract the relative time difference.
         t_j_window_end   = np.array(
             [traj.find_time_at_position(p_window_end) for traj in total_trajectories[:-1]]
-        ) - input_delta_t
+        ) - input_delta_t - ((self.L_buffer / self.n_buffer_seg) / self.vd)
 
         # Check some of the logic. 
         assert np.all(t_j_window_end <= np.array([traj.T for traj in total_trajectories[1:]])), \
