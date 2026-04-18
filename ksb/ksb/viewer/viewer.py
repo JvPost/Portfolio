@@ -342,7 +342,7 @@ class KSBViewer:
 
         # Second pass: gap warnings — only flag when both items are in the buffer
         buf_start = self.L_up
-        buf_end   = self.L_up + self.L_buf
+        buf_end   = self.L_up + self.L_buf - (self.L_buf / self.n_buffer_seg) 
 
         for i in range(n - 1):
             if p_leads[i] is None or p_leads[i + 1] is None:

@@ -167,8 +167,8 @@ class ConstantJerkTrajectory(TrajectoryProfile):
     jerk: float
 
     def __post_init__(self):
-        if abs(self.T) < 1e-9:
-            raise ValueError("Duration T must be positive")
+        # if abs(self.T) < 1e-9:
+        #     raise ValueError("Duration T must be positive")
         if not np.isclose(self.x0[P], 0.0, atol=1e-6):
             raise ValueError("ConstantJerkTrajectory expects x0[P] ≈ 0 (delta position semantics)")
 

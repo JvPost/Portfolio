@@ -252,4 +252,5 @@ class KSBSimulation:
             composite_trajectories=total_trajectories,
             buffer_trajectories=buffer_trajectories,
             pair_records=pairs,
+            buff_time_horizon=buffer_T_array - self.T_buffer_end_offset,
         )
