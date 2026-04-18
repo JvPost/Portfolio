@@ -13,7 +13,7 @@ The pipeline consists of four stages in series:
 
 where $v^{UB} \equiv v_u$ is the upstream belt speed and $v^{RD} \equiv v_d$ is the downstream belt speed. These are retained as $v_u$ and $v_d$ where the context is unambiguous. $v^{BR}$ is a free design parameter — the KSB exit velocity — decoupled from both $v_u$ and $v_d$.
 
-The registration stage is subdivided into $N_R$ segments with lengths $L^{R,1}, \ldots, L^{R,N_R}$ summing to $L^R$, with monotonically decreasing lengths to equalize dwell time (Section 5).
+The registration stage is subdivided into $N_R$ segments of equal length $L^R / N_R$. Dwell-time inequality across segments is absorbed by the per-segment deceleration weights, not by segment length (see *Registrar formalization* §3.1).
 
 Input length is $l_i$ (uniform across batch, written $l$ where unambiguous).
 
@@ -34,9 +34,13 @@ $$\mathcal{B}^k = (P^k,\; v^k)$$
 
 Every crossing velocity is a **design constant**. Setting it determines both the exit constraint of the upstream stage and the entry constraint of the downstream stage simultaneously.
 
-For registration sub-boundaries under uniform velocity allocation:
+For registration sub-boundaries under weighted velocity allocation:
 
-$$v^{R,n} = v^{BR} + n \cdot \Delta V, \qquad \Delta V = \frac{v_d - v^{BR}}{N_R} \leq 0$$
+$$
+v^{R,n} = v^{BR} - \left(\sum_{k=1}^{n} w_k\right)(v^{BR} - v_d)
+$$
+
+with weights satisfying $w_1 < w_2 < \cdots < w_{N_R}$ and $\sum_{n=1}^{N_R} w_n = 1$. The weights are design parameters determined by offline optimization (see *Registrar formalization* §3.1). Uniform weights $w_n = 1/N_R$ recover the special case of evenly-distributed deceleration.
 
 ---
 
@@ -73,9 +77,10 @@ where $v^{k_\text{in}}$ and $v^{k_\text{out}}$ are the crossing velocities of th
 
 For registration segment $n$:
 
-$$\Lambda^{R,n} = L^{R,n} - l_i, \qquad v^{k_\text{in}} = v^{R,n-1}, \qquad v^{k_\text{out}} = v^{R,n}$$
-
-with the hard requirement $L^{R,n} > l_i$ for all $n$.
+$$
+\Lambda^{R,n} = L^R/N_R - l_i, \qquad v^{k_\text{in}} = v^{R,n-1}, \qquad v^{k_\text{out}} = v^{R,n}
+$$
+with the hard requirement $L^R / N_R > l_i$.
 
 ---
 
@@ -93,23 +98,16 @@ This means **every solver receives $a = 0$ at entry and must deliver $a = 0$ at 
 
 ---
 
-## 6. Position Error and Registration
+## 6. Position Error as Diagnostic
 
 The position error $\Delta p_i$ is defined at $\mathcal{B}^{BR}$:
-
-$$\Delta p_i = p_i^{\text{actual}}\!\left(t_i^{B,\text{out}}\right) - p_i^{\text{target}}$$
+$$
+\Delta p_i = p_i^{\text{actual}}\!\left(t_i^{B,\text{out}}\right) - p_i^{\text{target}}
+$$
 
 where $p_i^{\text{target}}$ is the position of the assigned slot at $t_i^{B,\text{out}}$.
 
-The registration stage distributes the correction across $N_R$ segments:
-
-$$\sum_{n=1}^{N_R} \delta_i^n = -\Delta p_i$$
-
-where $\delta_i^n$ is the displacement correction applied by segment $n$. The solver for segment $n$ covers displacement $\Lambda^{R,n} + \delta_i^n$ with net velocity change $\Delta V$ within window $T_i^{R,n}$.
-
-The per-segment correction capacity $\delta_{\max}^n$ is a closed-form function of $(\Lambda^{R,n},\; v^{R,n-1},\; \Delta V,\; j_{\max},\; a_{\max})$. Feasibility requires:
-
-$$|\Delta p_i| \leq \sum_{n=1}^{N_R} \delta_{\max}^n$$
+$\Delta p_i$ is a diagnostic observable, not a controlled quantity. The registrar is stateless with respect to error: each input is handed off at $\mathcal{B}^{BR}$ and equalized to $v_d$ without reference to its slot-relative position. Any residual position error at $\mathcal{B}^{RD}$ is absorbed by downstream process tolerance. The distribution of $\Delta p_i$ is retained for system-level analysis — e.g. buffer parameter studies — but no component of the pipeline corrects it.
 
 ---
 
@@ -123,7 +121,7 @@ $$|\Delta p_i| \leq \sum_{n=1}^{N_R} \delta_{\max}^n$$
 | $v_u \equiv v^{UB}$ | design | Upstream belt speed |
 | $v^{BR}$ | design | KSB exit velocity — free tuning parameter |
 | $v_d \equiv v^{RD}$ | design | Downstream belt speed |
-| $\Delta V$ | design | Net velocity change per registration segment |
+| $w_n$ | design | Deceleration weight for registration segment $n$; $\sum_n w_n = 1$, $w_1 < \cdots < w_{N_R}$ |
 | $l_i$ | input | Physical length of input $i$ |
 | $\Lambda^S$ | derived | Effective control length of stage $S$: $L^S - l_i$ |
 | $\tau_i^k$ | derived | Straddling duration at boundary $k$: $l_i / v^k$ |
@@ -132,4 +130,3 @@ $$|\Delta p_i| \leq \sum_{n=1}^{N_R} \delta_{\max}^n$$
 | $T_i^S$ | per-input | Control window duration |
 | $\mathbf{x}_i^S$ | per-input | Entry state $[0,\; v^{k_\text{in}},\; 0]^\top$ |
 | $\Delta p_i$ | per-input | Position error at $\mathcal{B}^{BR}$ |
-| $\delta_i^n$ | per-input | Displacement correction by registration segment $n$ |

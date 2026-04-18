@@ -1,92 +1,110 @@
-# KSB System  — Design Narrative
+# KSB System — Design Narrative
 
-## 1. The Physical System
+## 1. The Synchronization Problem
 
-A packaging line consists of three mechanically decoupled conveyors in series. An upstream conveyor delivers discrete product inputs at a roughly constant spacing, but with real variability — inputs arrive slightly early or late relative to the mean. A downstream carrier runs at a fixed velocity $v_d$ and carries evenly spaced slots at spacing $d_s$, into which inputs must be placed precisely. Between them sits a servo-driven buffer conveyor, the KSB, whose job is to take each irregularly timed input and deliver it into the correct downstream slot at exactly the right moment.
+A packaging line delivers discrete inputs from an upstream conveyor at a roughly constant spacing with real variability — inputs arrive slightly early or late relative to the mean. A downstream carrier runs at fixed velocity $v_d$ with evenly spaced slots at spacing $d_s$. Between them sits a servo-driven buffer conveyor whose job is to take each irregularly timed input and deliver it into the correct downstream slot at exactly the right moment.
 
-The upstream runs at velocity $v_u$ and delivers inputs at mean spacing $\mu_u$ with standard deviation $\sigma_u$, giving an arrival rate $r_u = v_u / \mu_u$. The downstream runs at rate $r_d = v_d / d_s$. The system is designed with $\rho = r_u / r_d < 1$ — the upstream is slightly slower than the downstream, so on average fewer inputs arrive than there are slots. This means some slots will always go unfilled, and the buffer must decide which slot each input targets and execute a jerk-limited motion profile to get it there in time. The full system definition and gap metrics are formalized in **Buffer formalization.md**.
+The upstream runs at velocity $v_u$ and delivers inputs at mean spacing $\mu_u$ with standard deviation $\sigma_u$, giving an arrival rate $r_u = v_u / \mu_u$. The downstream slot rate is $r_d = v_d / d_s$. The system operates with $\rho = r_u / r_d < 1$ — the upstream is slightly slower, so some slots will always go unfilled. When the buffer determines that an input cannot feasibly reach the next available slot, it skips that slot and targets the one after it.
 
-The performance metric is the violation probability $\varepsilon$ — the fraction of consecutive input pairs for which the gap $g_i(t)$ between them drops below the minimum clearance $g_{\min}$ at any point during their shared time on the buffer. The goal is to keep $\varepsilon$ below a threshold $\varepsilon_{\max}$ across the full range of upstream variability $\sigma_u$.
+The performance metric is the violation probability $\varepsilon$ — the fraction of consecutive input pairs for which the gap $g_i(t)$ between them drops below the minimum clearance $g_{\min}$ at any point during their shared time on the buffer. The goal is $\varepsilon < \varepsilon_{\max}$. The full system definition, gap metrics, and skip mechanism are formalized in **Buffer formalization.md**.
 
 ---
 
-## 2. The KSB and Its Failure Modes
+## 2. Why a Single Buffer Stage Isn't Enough
 
-The KSB is a servo-driven conveyor of length $L^B$ divided into $N_B$ independently controllable segments. Each input enters at approximately $v_u$ and the KSB assigns it to the earliest feasible downstream slot, then executes a jerk-limited S-curve to deliver it there. The motion profile accelerates the input to a peak velocity, then decelerates back to $v_d$ for handoff, all within the kinematic bounds $(j_{\max}, a_{\max}, v_{\max})$ and subject to the clearance constraint $g_i(t) \geq g_{\min}$ between consecutive inputs.
-
-Running this system in simulation reveals two distinct gap violation patterns, visible in the per-input gap curves $g_i(t)$: violations concentrated at the start of the co-occupancy window, and violations concentrated at the end.
+The buffer does per-input slot assignment via jerk-limited motion profiles. Each input gets a different trajectory — it targets a different slot, requires a different correction magnitude, and covers a different velocity envelope. This per-input asymmetry is the buffer's job; it cannot be avoided. But it creates two distinct failure modes, visible in the per-input gap curves $g_i(t)$.
 
 ### 2.1 Start-of-Window Violations
 
-Start-of-window violations are a fundamental consequence of the upstream gap distribution. When input $i+1$ enters the KSB, its gap to input $i$ — which is already accelerating toward its slot — is determined by the upstream spacing $g_i^u$. If $g_i^u$ is small, input $i+1$ enters close behind input $i$, and the KSB's initial acceleration phase widens the gap as $i$ pulls away. But if $g_i^u$ is small enough, the gap starts below $g_{\min}$ or drops below it immediately, and no amount of acceleration can recover it fast enough. This is not primarily a skip problem — it is a structural consequence of the upstream arrival distribution. Skips exacerbate it: after a skip, the post-skip input must decelerate aggressively to hit an earlier slot, and the input immediately behind it is still traveling at $v_u$ unaware of the skip. The compression at the start of that pair's co-occupancy window is deeper and faster than the baseline case.
+When input $i+1$ enters the buffer, its gap to input $i$ — already accelerating toward its slot — is set by the upstream spacing $g_i^u$. If $g_i^u$ is small, $i+1$ enters close behind $i$, and while the buffer's acceleration widens the gap as $i$ pulls away, the initial compression may already violate $g_{\min}$. Skips make this worse: after a skip, the post-skip input decelerates aggressively to hit an earlier slot, while the input behind it is still at $v_u$. The compression at the start of that pair's co-occupancy window is deeper and faster than the baseline case.
+
+Start-of-window violations are event-driven. They concentrate around skip events and their severity scales with the phase error at the skip boundary. At low upstream variability ($\sigma_u \approx 0$), skips are nearly periodic and the violations are predictable. At high $\sigma_u$, skip timing becomes stochastic and violations scatter irregularly — but the long-run violation rate is set by $\rho$, not by $\sigma_u$.
 
 ### 2.2 End-of-Window Violations
 
-End-of-window violations are caused by the KSB's deceleration phase. Every input — not just post-skip ones — must decelerate from its peak velocity back to $v_d$ near the end of its buffer transit. During this deceleration, the following input is still arriving at $v_u \approx v_d$, so the gap compresses as the leading input slows. The longer and steeper the deceleration, the deeper the compression. With the KSB required to land inputs at exactly $v_d$, this deceleration cannot be avoided — it is built into every profile. Unlike start-of-window violations which are event-driven, end-of-window violations occur continuously on every input pair.
+Every input — not just post-skip ones — must decelerate from its peak velocity back to $v_d$ near the end of its buffer transit. During this deceleration, the following input is still at a higher velocity, so the gap compresses. The longer and steeper the deceleration, the deeper the compression. Unlike start-of-window violations, this occurs on every input pair. It is structural, not event-driven.
+
+The root cause is trajectory asymmetry: consecutive inputs have different velocity profiles, so during the deceleration phase of input $i$, the gap $g_i(t)$ depends on the difference between two unrelated trajectories. Making the deceleration gentler spreads the compression over a longer window but does not reduce the total gap loss — the integral is set by the velocity difference, not the acceleration rate. You cannot fix asymmetric deceleration by making it slower; you can only fix it by making it symmetric.
 
 ---
 
-## 3. The Upstream Controller
+## 3. The Three-Subsystem Architecture
 
-To address start-of-window violations, we add an upstream feedforward controller. The upstream belt normally runs at constant $v_u$, but the controller modulates it with two objectives.
+The two failure modes have different causes and require different interventions. Start-of-window violations are driven by skip transients in the upstream arrival stream. End-of-window violations are driven by the buffer's need to decelerate each input back to $v_d$. The architecture addresses each with a dedicated subsystem: upstream feedforward control for skip compensation, the buffer for per-input slot assignment, and a registrar stage for symmetric velocity equalization.
 
-**Objective 1 — reduce baseline gap violations.** By running the upstream belt slightly faster between skips, inputs arrive at the KSB entry with higher velocity and larger gaps than the nominal distribution would produce. The KSB's acceleration phase starts from a better position, reducing the frequency of start-of-window violations. The upstream controller cannot eliminate them entirely — they are a tail event of the upstream spacing distribution — but it shifts the distribution favorably.
+### 3.1 Upstream Feedforward Control
 
-**Objective 2 — reduce post-skip compression.** Immediately after a skip is detected, the upstream controller briefly decelerates. This slows the input immediately following the skip relative to where it would have been, giving the post-skip input more time to pull away before the follower enters the KSB. The deceleration is sized to match the skip's phase error, and the belt returns to $v_u$ once recovery is complete. The upstream formalization is in **Upstream formalization.md**.
+The upstream belt normally runs at constant $v_u$, but a feedforward controller modulates it around skip events. Between skips, the controller accelerates the belt, building a velocity surplus $\Delta v_k$ that causes inputs to arrive at the buffer entry with larger-than-nominal gaps. This shifts the gap distribution favorably, reducing baseline start-of-window violations. When a skip is detected at time $s_k$, the controller immediately decelerates, spending the accumulated surplus in a controlled recovery. This slows the input following the skip, giving the post-skip input more time to pull away before its follower enters the buffer.
 
-The upstream controller substantially reduces start-of-window violations and skip compression. It does not address end-of-window violations.
+The controller operates in inter-skip phases $\Pi_k$, each consisting of an acceleration ramp (appended incrementally as inputs are processed) followed by a deceleration profile (appended in full at the skip). Two phase invariants guarantee that the belt returns to $(v_u, 0)$ after each cycle: the acceleration invariant ($\sum j^{(n)} T^{(n)} = 0$, ensuring $a \to 0$) and the velocity invariant ($\sum \text{area}_n = 0$, ensuring $v \to v_u$). The deceleration is sized exactly to match the accumulated state $(a_k, \Delta v_k)$ at each skip — it adapts to how much surplus was built, not to a fixed maximum.
 
----
+The full formalization is in **Upstream formalization.md**.
 
-## 4. The Registrar
+![[upstream_control_phases.png]] _The upstream acceleration signal $a^{\text{up}}(t)$ across four inter-skip phases $\Pi_1, \ldots, \Pi_4$. Top: the raw signal, showing acceleration between skips ($s_1, \ldots, s_4$) and deceleration after each. Middle: the upstream window $\mathcal{W}_i$ for a single input, showing its projection of the jerk timeline during its transit from spawn to buffer entry. Bottom: the upstream window $\mathcal{W}_{i+1}$ for the following input — note that the windows overlap in time but each input experiences a different slice of the acceleration signal._
 
-End-of-window violations require a different intervention. The root cause is that the KSB must decelerate all the way to $v_d$ before handoff. The solution is to stop requiring this: allow the KSB to exit at a higher velocity $v^{BR} > v_d$, and add a downstream stage — the Registrar — that performs the remaining deceleration gracefully.
+### 3.2 Buffer
 
-### 4.1 Graceful Staged Deceleration
+The buffer is a servo-driven conveyor of length $L^B$ divided into $N_B$ segments. Its job is slot assignment and velocity shaping: given each input's arrival time and the downstream slot schedule, determine which slot to target and execute a jerk-limited profile to get there. The buffer handles the per-input, asymmetric part of the problem — every input gets a different trajectory because it targets a different slot.
 
-The registrar is a sequence of $N_R$ independently-controllable conveyor segments, each decelerating the input by an equal share of the total velocity drop:
+The key design choice is the exit velocity $v^{BR}$. Instead of requiring the buffer to decelerate all the way to $v_d$, we set $v^{BR} > v_d$ and let the buffer exit at a higher velocity. This shortens (or eliminates) the buffer's deceleration phase, directly reducing end-of-window gap compression. The cost is that the input arrives at the registrar above $v_d$ — the remaining deceleration is delegated to the next stage.
 
-$$\Delta V = \frac{v_d - v^{BR}}{N_R} \leq 0$$
+### 3.3 Registrar
 
-Each segment applies a jerk-limited deceleration profile — a trapezoidal acceleration curve as shown in the system diagram — and hands the input to the next segment at the new, lower velocity. The input exits the final segment at exactly $v_d$, as required by the downstream carrier. Because the total deceleration $v^{BR} - v_d$ is distributed across $N_R$ segments, each individual deceleration event is small and gentle, producing minimal gap disturbance.
+The registrar receives each input at $\mathcal{B}^{BR}$ traveling at $v^{BR}$ and decelerates it to $v_d$ for handoff to the downstream carrier. Because $v^{BR}$ is a fixed design constant, every input enters the registrar at the same velocity. Consecutive inputs follow the identical position curve, time-shifted by $\Delta t = g_{\min}/v^{BR}$. The deceleration is symmetric — same profile, same gap compression, fully predictable — and this symmetry is what makes it safe.
 
-Segment lengths decrease monotonically from $L^{R,1}$ to $L^{R,N_R}$ to equalize dwell time per segment — upstream segments are traversed faster, so they must be longer to give each correction an equal time budget. The full geometry and timing are formalized in **Registrar formalization.md**.
+The registrar is stateless with respect to position error: it does not know or care where input $i$ is relative to its assigned slot. It solves a pure velocity equalization problem. The interface between buffer and registrar collapses to a single scalar: $v^{BR}$.
 
-### 4.2 Position Error Correction
-
-By exiting the KSB at $v^{BR} > v_d$, the KSB's deceleration phase is shortened. A shorter deceleration means the KSB's motion profile is less symmetric — more of the kinematic budget is available for the acceleration phase, which is what drives inputs to their slots and maintains gap clearance. The trade-off is that the KSB is no longer required to land inputs exactly on their slots. It commits to a slot and hands off at $v^{BR}$, but a small position error $\Delta p_i$ accumulates — caused by belt-to-input slip under more aggressive accelerations and by co-occupancy effects under relaxed gap enforcement. This error is defined formally in **KSB System — Unified Kinematic Formalization.md**, Section 6.
-
-The registrar absorbs this error by modulating the per-segment deceleration. If an input is running slightly ahead of its slot, the segment decelerates slightly more than the nominal $|\Delta V|$, retarding the input relative to the slot. If it is behind, the segment decelerates slightly less, advancing it. The correction is the residual degree of freedom in the deceleration profile: the baseline deceleration is $\Delta V$, and the correction $\delta_i^n$ adjusts the area of each segment's deceleration trapezoid above or below nominal.
-
-This is a cleaner framing than treating position correction and deceleration as separate tasks sharing a budget. They are the same task: the registrar decelerates each input from $v^{BR}$ to $v_d$ across $N_R$ stages, and the precise shape of each stage's deceleration profile is tuned to simultaneously correct the accumulated position error.
-
-### 4.3 Gap Safety on the Registrar
-
-Gap compression cannot occur on the registrar by construction. When input $i+1$'s leading edge enters segment $n+1$ while input $i$'s trailing edge is still leaving segment $n$, both segments are velocity-matched at the shared boundary crossing velocity $v^{R,n}$ — required by the mechanical straddling constraint. No relative velocity means no gap change. The clearance constraint is satisfied by the design, not enforced by a solver.
+The full formalization is in **Registrar formalization.md**.
 
 ---
 
-## 5. Role of Each Subsystem
+## 4. The Logical Split
 
-| Subsystem | Primary job | Secondary job |
+The buffer and registrar operate in two different control regimes. Above $v^{BR}$, each input follows its own trajectory — per-input, asymmetric, gap constraint active. Below $v^{BR}$, all inputs follow the same trajectory — shared, symmetric, gap safety by construction. The buffer handles the first regime, the registrar handles the second. The boundary between them is not a physical necessity but a control regime boundary, defined by a single scalar: $v^{BR}$.
+
+The buffer performs a complete jerk-limited profile on each input: acceleration from $v_u$ to a peak velocity $v_{\text{peak}}$, then deceleration back to $v^{BR}$. All 7 phases of this profile occur on the buffer. The registrar then performs a separate 3-phase deceleration from $v^{BR}$ to $v_d$, identical for every input.
+
+![[buffer_registrar_acceleration.png]] _The acceleration signal $a_i(t)$ of a single input across buffer and registrar. On the buffer: a full 7-phase profile — acceleration from $v_u$ to $v_{\text{peak}}$ (phases 1–3), then deceleration back to $v^{BR}$ (phases 5–7), with a coast at $v_{\text{peak}}$ in between (phase 4). On the registrar: a separate 3-phase deceleration from $v^{BR}$ to $v_d$. The buffer acceleration integral decomposes as $\int_B a_i(t),dt = (v_{\text{peak}} - v_u) + (v^{BR} - v_{\text{peak}})$. The first term — phases 1–3 — is what builds the gap between input $i$ and its follower. The second term — phases 5–7 — compresses it back. The net buffer deposit is $v^{BR} - v_u$, and the registrar withdrawal is $v^{BR} - v_d$. What matters for gap safety is the peak deposit $v_{\text{peak}} - v_u$, which is always larger than the net._
+
+Because the buffer's time-optimal solver maximizes $v_{\text{peak}}$ for the available time horizon, normal (non-skip) inputs reach high peak velocities and build large gap deposits during phases 1–3. The subsequent deceleration to $v^{BR}$ on the buffer compresses the gap, but the peak deposit was large enough to absorb it. The registrar then compresses a bit more, but symmetrically — and the final gap at $\mathcal{B}^{RD}$ remains safely above $g_{\min}$.
+
+The architecture works because the dangerous part of the problem — stochastic arrivals, per-input slot assignment, skip-induced transients — is separated from the safe part — deterministic, shared deceleration — by $v^{BR}$. The buffer's job is to solve the hard problem (slot alignment under uncertainty) and hand off a clean, uniform stream. The registrar's job is to solve the easy problem (symmetric velocity equalization) without disturbing the gap structure the buffer worked to establish.
+
+The registrar is not solving a problem "created by" the buffer. It is solving the half of the original synchronization problem that can be made symmetric. The buffer solves the half that cannot.
+
+---
+
+## 5. Registrar Sizing
+
+The registrar's safety condition reduces to a per-segment constraint: the active deceleration phase on each segment must complete before the following input begins its active phase on the same segment.
+
+Because consecutive inputs are time-shifted copies separated by $\Delta t = g_{\min}/v^{BR}$, and because this temporal offset is invariant across segments (the spatial gap compresses as velocity decreases, but the time offset does not), every segment has the same temporal safety budget $\Delta t$. The binding constraint on each segment is the smaller of the control window $T_n = \Lambda^{R,n}/\bar{v}_n$ (how long the input is on the segment) and $\Delta t$ (how long before the follower starts).
+
+At realistic parameters ($g_{\min} = 1.0$ m, $v^{BR} = 1.5$ m/s, $\Delta v = 0.18$ m/s, $j_{\max} = 100$ m/s³), the active phase duration for a single-segment registrar is $T^{\text{act}} = 2\sqrt{\Delta v / j_{\max}} = 0.085$ s, fitting comfortably within both the control window ($T_1 = 0.187$ s for a 0.6 m segment) and the safety interval ($\Delta t = 0.667$ s). A single registrar segment of length 0.6 m can handle a velocity drop of 0.88 m/s — nearly 5× the required 0.18 m/s.
+
+The registrar is the easy part of the system. The buffer — with its per-input trajectory planning, skip-dependent corrections, and stochastic gap dynamics — is the hard part. The registrar sizing confirms this quantitatively: the design effort concentrates on the buffer and upstream controller, where the problem is genuinely difficult, while the registrar is a closed-form sizing exercise whose feasibility is guaranteed by wide margins.
+
+Multi-segment registrar designs ($N_R > 1$) are not required at current parameters but provide headroom: the ability to handle larger $v^{BR}$ or tighter $g_{\min}$ without mechanical redesign. The general $N_R$-segment formalization — including the per-segment weight optimization — is retained in **Registrar weight optimization.md** for the case where parameters tighten and the problem becomes non-trivial.
+
+---
+
+## 6. Role of Each Subsystem
+
+|Subsystem|Addresses|Mechanism|
 |---|---|---|
-| **Upstream** | Constant-velocity infeed at $v_u$ | Feedforward modulation to reduce start-of-window violations and post-skip compression |
-| **KSB** | Slot assignment and velocity shaping; exits at $v^{BR}$ | Aggressive acceleration phase enabled by relaxed landing requirement |
-| **Registrar** | Graceful staged deceleration from $v^{BR}$ to $v_d$ across $N_R$ segments | Position error correction $\Delta p_i$ via per-segment deceleration modulation |
-| **Downstream** | Constant-velocity carrier at $v_d$ | — |
+|**Upstream control**|Start-of-window violations (skip transients)|Feedforward velocity modulation: builds gap surplus between skips, spends it in controlled deceleration after each skip|
+|**Buffer**|Per-input slot assignment (the asymmetric problem)|Jerk-limited profiles targeting individual slots; exits at $v^{BR} > v_d$ to minimize deceleration-phase compression|
+|**Registrar**|End-of-window violations (the symmetric residual)|Shared deceleration profile from $v^{BR}$ to $v_d$; gap safety by construction via time-shift invariance|
 
 ---
 
-## 6. Design Parameters
+## 7. Design Parameters
 
-The system has a small set of free geometric and velocity parameters that jointly determine $\varepsilon$:
-
-| Parameter                     | Meaning                                  | Effect                                                                                   |          |     |
-| ----------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------- | -------- | --- |
-| $v^{BR}$                      | KSB exit velocity                        | Higher → shorter KSB decel, fewer end-of-window violations, more registrar load          |          |     |
-| $L^B$, $N_B$                  | KSB length and segment count             | Sets effective control length $\Lambda^B = L^B - l_i$; more segments reduce co-occupancy |          |     |
-| $L^R$, $N_R$                  | Registrar total length and segment count | More segments → finer-grained correction, smaller per-segment $                          | \Delta V | $   |
-| $L^{R,n}$                     | Per-segment registrar lengths            | Decreasing toward downstream to equalize dwell time                                      |          |     |
-| $\Delta v_{\max}^{\text{up}}$ | Upstream controller velocity ceiling     | Higher → more aggressive gap pre-conditioning, longer recovery windows                   |          |     |
-
-The optimal geometry minimizes $\varepsilon$ subject to the registrar's feasibility constraint $|\Delta p_i| \leq \sum_n \delta_{\max}^n$ across the full batch. This is the primary goal of the simulation.
+|Parameter|Meaning|Effect|
+|---|---|---|
+|$v^{BR}$|KSB exit velocity|Higher → shorter buffer decel, fewer end-of-window violations, more registrar load|
+|$L^B$, $N_B$|Buffer length and segment count|Sets effective control length; more segments reduce co-occupancy|
+|$L^R$, $N_R$|Registrar total length and segment count|More segments → headroom for larger $v^{BR}$; $N_R = 1$ sufficient at current parameters|
+|$\Delta v_{\max}^{\text{up}}$|Upstream controller velocity ceiling|Higher → more aggressive gap pre-conditioning, longer recovery windows|
+|$j_{\max}$, $a_{\max}$|Kinematic bounds|Shared across subsystems; set by mechanical limits|
+|$g_{\min}$|Minimum clearance|Hard safety constraint; determines $\Delta t$ and therefore registrar feasibility|
