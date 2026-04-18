@@ -298,6 +298,7 @@ def get_next_slot(
     policy: Policy,
     solver: IProfileSolver,
     t_offset: float = 0.0,
+    vd_slot: Optional[float] = None,
 ) -> Tuple[int, TrajectoryProfile]:
     """Assign a single input to the earliest feasible slot index.
 
@@ -306,19 +307,22 @@ def get_next_slot(
         slot_idx:        slot index to start searching from
         slot_length:     slot spacing (m)
         vi:              initial velocity (m/s)
-        vf:              target velocity at slot (m/s)
+        vf:              target velocity at buffer exit (m/s)
         L_buffer_ctrl:   distance to cover in the buffer (m)
         bounds:          np.array([j_max, A_max, V_max, gap_min])
         policy:          Policy config
         solver:          trajectory solver
-        t_offset:        time offset for slot phase (s)
+        t_offset:        time offset added to each slot time (s); use
+                         -T_registrar to account for registrar transit
+        vd_slot:         downstream speed used for slot period calculation
+                         (m/s); defaults to vf when omitted, for the case
+                         where the buffer exits directly at v_d
 
     Returns:
         slot_idx: assigned slot index
         traj:     feasible trajectory profile
     """
-    vd = vf
-    slot_period = slot_length / vd
+    slot_period = slot_length / (vd_slot if vd_slot is not None else vf)
     attempts = 0
 
     while True:
@@ -333,7 +337,7 @@ def get_next_slot(
         time_horizon = slot_time - t_control_start
 
         try:
-            traj : TrajectoryProfile = solver.solve(0.0, vi, L_buffer_ctrl, vd, time_horizon, bounds, policy)
+            traj: TrajectoryProfile = solver.solve(0.0, vi, L_buffer_ctrl, vf, time_horizon, bounds, policy)
             return slot_idx, traj
         except InfeasibleError:
             continue

@@ -4,6 +4,7 @@ from typing import List, Optional
 
 import numpy as np
 
+from ksb.control.registrar import RegistrarProfile
 from ksb.control.upstream_control import ConstantVelocityControl, UpstreamController, PreAccelerateControl
 from ksb.motion.item_pair import PairRecord, compute_pairs
 from ksb.motion.trajectories import CompositeTrajectory, TrajectoryProfile, P, V, A
@@ -96,7 +97,22 @@ class KSBSimulation:
                                                
         self._d_solver = LinearTrajectorySolver()
 
-        
+        self._registrar = RegistrarProfile(
+            v_in=self.v_buff_out,
+            v_out=self.vd,
+            L_reg=self.L_reg,
+            input_length=self.input_length,
+            j_max=self.jmax,
+            a_max=self.Amax,
+        )
+        print(
+            f"Registrar: v_in={self.v_buff_out:.3f} → v_out={self.vd:.3f}, "
+            f"T_active={self._registrar.T_active:.4f}s, "
+            f"T_coast={self._registrar.T_coast:.4f}s, "
+            f"T_total={self._registrar.T_total:.4f}s"
+        )
+
+
 
     def run(self, seed: Optional[int] = None) -> SimulationResult:
         vu, vd = self.vu, self.vd
@@ -137,9 +153,13 @@ class KSBSimulation:
             t_in = t0 + upstream_ctrl_traj.T
             v_in = self._u_control._state_at(t_in)[V]
 
-            slot_idx, buffer_traj = utils.get_next_slot(t_in, slot_idx, self.slot_length, 
-                                            v_in, self.vd, L_buffer_ctrl, self.bounds, 
-                                            self.policy, self.solver)
+            slot_idx, buffer_traj = utils.get_next_slot(
+                t_in, slot_idx, self.slot_length,
+                v_in, self.v_buff_out, L_buffer_ctrl, self.bounds,
+                self.policy, self.solver,
+                t_offset=-self._registrar.T_total,
+                vd_slot=self.vd,
+            )
             
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1
@@ -156,7 +176,7 @@ class KSBSimulation:
             prev_slot_idx = slot_idx
 
         assigned_slot_times = assigned_slots * slot_period
-        buffer_T_array = assigned_slot_times - t_control_start
+        buffer_T_array = assigned_slot_times - t_control_start - self._registrar.T_total
 
         # 4) Phase errors
         projected_no_corr = t_spawn + (L_upstream + self.L_buffer) / vu
@@ -177,17 +197,22 @@ class KSBSimulation:
                 pi=0.0, vi=vd, pf=L_downstream, vf=vd, T=downstream_T,
                 bounds=bounds, policy=policy,
             )
-            total_T = t_duration_upstream[i] + tf + downstream_T
+            total_T = t_duration_upstream[i] + tf + self._registrar.T_total + downstream_T
             comp_traj = CompositeTrajectory(
                 x0=x0_upstream,
                 T=total_T,
-                segments=(upstream_ctrl_trajectories[i], buffer_traj, d_traj),
+                segments=(
+                    upstream_ctrl_trajectories[i],
+                    buffer_traj,
+                    self._registrar.trajectory,
+                    d_traj,
+                ),
             )
             total_trajectories.append(comp_traj)
 
-        # 6) pair record 
+        # 6) pair record
         p_window_start = L_upstream
-        p_window_end = L_upstream + self.L_buffer + self.input_length
+        p_window_end = L_upstream + self.L_buffer + self.L_reg + self.input_length
         
 
         t_i_boundary_upstream_buffer = np.array(

@@ -24,4 +24,4 @@ batch: 100
 start_margin: 1 # the fraction of the input length, that must be on the buffer, before buffer control may commence.
 end_margin: 0.0
 
-V_buff_out: 1.5 # v^{BR}
+v_buff_out: 1.5 # v^{BR}

@@ -4,7 +4,8 @@
       "Bash(pip install:*)",
       "Bash(python:*)",
       "Bash(jupyter nbconvert:*)",
-      "Bash(python3 run_sim.py --seed 42)"
+      "Bash(python3 run_sim.py --seed 42)",
+      "Bash(conda run:*)"
     ]
   }
 }
