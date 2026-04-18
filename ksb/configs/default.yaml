@@ -4,12 +4,12 @@ jmax: 100.0
 Vmax: 3.0
 Amax: 8.5
 L_upstream: 2.0
-L_buffer: 3.0
+L_buffer: 2.5
 L_registrar: 0.5
 L_downstream: 2.0
 input_length: 0.32
 
-n_buffer_seg: 6
+n_buffer_seg: 5
 n_reg_seg: 1
 
 slot_length: 0.6
