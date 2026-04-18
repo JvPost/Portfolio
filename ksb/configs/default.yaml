@@ -5,7 +5,7 @@ Vmax: 3.0
 Amax: 8.5
 L_upstream: 2.0
 L_buffer: 2.5
-L_registrar: 0.5
+L_registrar: 0.6
 L_downstream: 2.0
 input_length: 0.32
 

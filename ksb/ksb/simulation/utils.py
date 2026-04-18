@@ -327,7 +327,7 @@ def get_next_slot(
 
     while True:
         attempts += 1
-        if attempts > 100:
+        if attempts > 10:
             raise SlotAssignmentError(
                 f"No feasible slot for input at t_control_start={t_control_start:.4f}"
             )

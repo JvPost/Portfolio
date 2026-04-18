@@ -70,7 +70,7 @@ class RegistrarProfile:
     dp_active: float = field(init=False)
 
     def __post_init__(self) -> None:
-        Lambda_R = self.L_reg - self.input_length
+        Lambda_R = self.L_reg - self.input_length # control length
         assert Lambda_R > 0, (
             f"Effective registrar length Lambda_R = L_reg - input_length "
             f"= {self.L_reg} - {self.input_length} = {Lambda_R:.4f} m must be positive"

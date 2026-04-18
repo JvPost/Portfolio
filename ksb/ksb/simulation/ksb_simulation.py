@@ -96,7 +96,6 @@ class KSBSimulation:
                                                )
                                                
         self._d_solver = LinearTrajectorySolver()
-
         self._registrar = RegistrarProfile(
             v_in=self.v_buff_out,
             v_out=self.vd,
@@ -147,12 +146,13 @@ class KSBSimulation:
 
         prev_slot_idx = None
         
+        # Upstream control & slot assignments, which also computes buffer trajectory.
         for i, t0 in enumerate(t_spawn):
             upstream_ctrl_traj = self._u_control.subsection(t0, L_upstream_ctrl)
 
             t_in = t0 + upstream_ctrl_traj.T
-            v_in = self._u_control._state_at(t_in)[V]
-
+            v_in = self._u_control.state_at(t_in)[V]
+            
             slot_idx, buffer_traj = utils.get_next_slot(
                 t_in, slot_idx, self.slot_length,
                 v_in, self.v_buff_out, L_buffer_ctrl, self.bounds,
@@ -165,13 +165,13 @@ class KSBSimulation:
                 skipped = slot_idx > prev_slot_idx + 1
                 if skipped:
                     self._u_control.on_skip(t_in)
-             
-            buffer_trajectories.append(buffer_traj)
 
             t_control_start[i] = t_in
             assigned_slots[i] = slot_idx
             t_duration_upstream[i] = upstream_ctrl_traj.T
+
             upstream_ctrl_trajectories.append(upstream_ctrl_traj)
+            buffer_trajectories.append(buffer_traj)
 
             prev_slot_idx = slot_idx
 
@@ -187,12 +187,11 @@ class KSBSimulation:
 
         skip_indices = np.arange(1, self.batch)[np.diff(assigned_slots) > 1] - 1
 
-        # 5) Buffer + downstream trajectories
+        # 5) downstream trajectories & construction of the entire history
         total_trajectories: List[CompositeTrajectory] = []
         downstream_T = L_downstream / vd
 
         for i, tf in enumerate(buffer_T_array):
-            buffer_traj = buffer_trajectories[i]
             d_traj = self._d_solver.solve(
                 pi=0.0, vi=vd, pf=L_downstream, vf=vd, T=downstream_T,
                 bounds=bounds, policy=policy,
@@ -202,10 +201,10 @@ class KSBSimulation:
                 x0=x0_upstream,
                 T=total_T,
                 segments=(
-                    upstream_ctrl_trajectories[i],
-                    buffer_traj,
-                    self._registrar.trajectory,
-                    d_traj,
+                    upstream_ctrl_trajectories[i], # varies due to slot skipping 
+                    buffer_trajectories[i], # varies due to noise & slot skipping
+                    self._registrar.trajectory, # constant
+                    d_traj, # constant
                 ),
             )
             total_trajectories.append(comp_traj)

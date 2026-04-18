@@ -60,7 +60,7 @@ class UpstreamController(ABC):
         )
         self._last_t_spawn = t_spawn
 
-        x0 = self._state_at(t_spawn)
+        x0 = self.state_at(t_spawn)
 
         segments: List[ConstantJerkTrajectory] = []
         remaining = distance
@@ -155,7 +155,7 @@ class UpstreamController(ABC):
                 return seg
         raise ValueError(f"No segment found at t={t:.6f}")
 
-    def _state_at(self, t: float) -> np.ndarray:
+    def state_at(self, t: float) -> np.ndarray:
         """Return belt state [p, v, a] at absolute time t by integrating T."""
         p, v, a = 0.0, self._vu, 0.0
         for seg_t, seg_j, seg_T in self._timeline:
@@ -279,7 +279,7 @@ class PreAccelerateControl(UpstreamController):
         3. Append deceleration Pi_k^dec (if needed).
         4. Append acceleration Pi_{k+1}^acc.
         """
-        state = self._state_at(t_skip)
+        state = self.state_at(t_skip)
         a_k = float(state[A])
         dv_k = float(state[V]) - self._vu
 
