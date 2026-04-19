@@ -333,8 +333,11 @@ class KSBViewer:
 
         rects:  List[Optional[pygame.Rect]] = [None] * n
         colors: List                        = [ITEM_COLORS[i % 2] for i in range(n)]
+
         p_leads: List[Optional[float]]      = [None] * n
         p_trails: List[Optional[float]]     = [None] * n
+
+        X: List[Optional[float]]     = [None] * n
 
         # First pass: positions
         for i, traj in enumerate(result.composite_trajectories):
@@ -358,9 +361,11 @@ class KSBViewer:
             p_leads[i] = p_lead
             p_trails[i] = p_lead - self.input_length
 
+            X[i] = state
+
         # Second pass: gap warnings — flag when both items are in buffer or registrar
         buf_start = self.L_up
-        buf_end   = self.L_up + self.L_buf + self.L_reg
+        buf_end   = self.L_up + self.L_buf 
 
         for i in range(n - 1):
             if p_leads[i] is None or p_leads[i + 1] is None:
@@ -370,6 +375,10 @@ class KSBViewer:
                     buf_end >= p_trails[i] and # trailing edge leading input
                     buf_start <= p_leads[i + 1] <= buf_end): # following input 
                 continue
+
+            if X[i][A] == .0 and X[i+1][A] == 0 and  X[i][V] == X[i+1][V]:
+                continue
+            
             gap = p_leads[i] - p_leads[i + 1]
             if gap < self.gap_min:
                 colors[i]     = ITEM_RED
