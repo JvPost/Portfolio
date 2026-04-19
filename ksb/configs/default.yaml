@@ -27,10 +27,11 @@ end_margin: 0.0
 # upstream
 j_u_max: 100.0
 a_u_max: 8.5
-v_u_max: 2.0
+v_u_max: 3.0
 
 # buffer
-v_buff_out: 1.5 # v^{BR}
+# v_buff_out: 1.32 # v^{BR}
+v_buff_out: 1.5
 
 # registrar
 

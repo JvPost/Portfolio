@@ -4,6 +4,7 @@ from typing import List, Optional
 
 import numpy as np
 
+from ksb.analysis.events import compute_segment_events
 from ksb.control.registrar import RegistrarProfile
 from ksb.control.upstream_control import ConstantVelocityControl, UpstreamController, PreAccelerateControl
 from ksb.motion.item_pair import PairRecord, compute_pairs
@@ -61,7 +62,7 @@ class KSBSimulation:
         self.vd = self.rd * self.slot_length
 
         self.v_buff_out = float(cfg.get('v_buff_out', 2.0)) # v^{BR}
-        assert self.v_buff_out > self.vd
+        assert self.v_buff_out >= self.vd
 
         self.slot_period = self.slot_length / self.vd
 
@@ -225,10 +226,25 @@ class KSBSimulation:
             )
             total_trajectories.append(comp_traj)
 
-        # 6) pair record
+        #
+        # 6) segment events
+        #
+        segment_events = None
+        if self.batch > 1:
+            segment_events = compute_segment_events(
+                total_trajectories=total_trajectories,
+                t_spawn=t_spawn,
+                input_length=self.input_length,
+                L_upstream=L_upstream,
+                L_buffer=self.L_buffer,
+                N_B=self.n_buffer_seg,
+            ) 
+
+        
+        # time computation such that we also keep track of inputs in buffer when 
+        # input $i$ already entered buffer, but $i+1$ has not. 
         p_window_start = L_upstream
         p_window_end = L_upstream + self.L_buffer + self.L_reg + self.input_length
-        
 
         t_i_boundary_upstream_buffer = np.array(
             [traj.find_time_at_position(p_window_start) for traj in total_trajectories]
@@ -247,6 +263,7 @@ class KSBSimulation:
             [traj.find_time_at_position(p_window_end) for traj in total_trajectories[:-1]]
         ) - input_delta_t
 
+        # 7) pair record
         # Check some of the logic. 
         assert np.all(t_j_window_end <= np.array([traj.T for traj in total_trajectories[1:]])), \
             "t_window_end exceeds follower trajectory duration — overtake detected"
@@ -278,4 +295,5 @@ class KSBSimulation:
             composite_trajectories=total_trajectories,
             buffer_trajectories=buffer_trajectories,
             pair_records=pairs,
+            segment_events=segment_events,
         )

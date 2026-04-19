@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
@@ -22,3 +22,4 @@ class SimulationResult:
     composite_trajectories: List[CompositeTrajectory]
     buffer_trajectories: List[TrajectoryProfile]
     pair_records: List[PairRecord]
+    segment_events: Optional[object] = None  # SegmentEvents if batch >= 2, else None
