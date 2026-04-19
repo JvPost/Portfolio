@@ -1,15 +1,15 @@
-# solver: quintic
-solver: scurve
+solver: quintic
+# solver: scurve
 jmax: 100.0
 Vmax: 3.0
 Amax: 8.5
 L_upstream: 2.0
-L_buffer: 2.5
-L_registrar: 0.6
+L_buffer: 3
+L_registrar: 0.7
 L_downstream: 2.0
 input_length: 0.32
 
-n_buffer_seg: 5
+n_buffer_seg: 6
 n_reg_seg: 1
 
 slot_length: 0.6
@@ -24,4 +24,15 @@ batch: 100
 start_margin: 1 # the fraction of the input length, that must be on the buffer, before buffer control may commence.
 end_margin: 0.0
 
-v_buff_out: 2.0 # v^{BR}
+# upstream
+j_u_max: 100.0
+a_u_max: 8.5
+v_u_max: 2.0
+
+# buffer
+v_buff_out: 1.5 # v^{BR}
+
+# registrar
+
+
+# downstream

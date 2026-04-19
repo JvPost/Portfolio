@@ -47,7 +47,7 @@ class KSBSimulation:
         self.slot_length = float(cfg.get("slot_length", 0.40))
         self.gap_mean = float(cfg.get("input_gap_mean", 0.80))
         self.gap_std = float(cfg.get("input_gap_std", 0.05))
-        # self.gap_min = self.L_buffer / self.n_buffer_seg + self.input_length
+
         self.gap_min = 2 * self.L_buffer / self.n_buffer_seg
 
         arrival_rate_ppm = float(cfg.get("arrival_rate_ppm", 180))
@@ -59,8 +59,7 @@ class KSBSimulation:
 
         self.vu = self.ru * self.gap_mean
         self.vd = self.rd * self.slot_length
-        ### EXPERIMENTAL
-        # TODO: This is a good variable to optimize over as well, when we chose to optimize the entire KSB system party won a supermajority.
+
         self.v_buff_out = float(cfg.get('v_buff_out', 2.0)) # v^{BR}
         assert self.v_buff_out > self.vd
 
@@ -86,13 +85,14 @@ class KSBSimulation:
         ])
         self.policy = Policy(input_length=self.input_length)
 
-        # self._u_control = ConstantVelocityControl(self.vu)
+        self.j_u_max = float(cfg.get('j_u_max', 100.))
+        self.a_u_max = float(cfg.get('a_u_max', 2.0))
+        self.v_u_max = float(cfg.get('v_u_max', 2.0))
         self._u_control = PreAccelerateControl(vu = self.vu, 
-                                               j_max = self.jmax * 1.0, 
+                                               j_u_max = self.j_u_max,
                                                a_max = self.Amax, 
-                                               a_max_acc = 0.5,
-                                            #    v_max_up= self.vu + (self.Vmax - self.vu) * .5
-                                                v_max_up=1.5
+                                               a_u_max = self.a_u_max,
+                                               v_u_max= self.v_u_max,
                                                )
                                                
         self._d_solver = LinearTrajectorySolver()
@@ -152,12 +152,14 @@ class KSBSimulation:
 
             t_in = t0 + upstream_ctrl_traj.T
             v_in = self._u_control.state_at(t_in)[V]
-            
+            #            straddle time                         registrar time
+            t_offset = -(self.input_length / self.v_buff_out + self._registrar.T_total)           
+
             slot_idx, buffer_traj = utils.get_next_slot(
                 t_in, slot_idx, self.slot_length,
                 v_in, self.v_buff_out, L_buffer_ctrl, self.bounds,
                 self.policy, self.solver,
-                t_offset=-(self.input_length / self.v_buff_out + self._registrar.T_total),
+                t_offset=t_offset,
                 vd_slot=self.vd,
             )
             

@@ -80,7 +80,7 @@ class UpstreamController(ABC):
             dx_full = candidate.eval(seg_remaining)
             dp_full = dx_full[P]
 
-            if dp_full < remaining + 1e-9:
+            if dp_full < remaining + 1e-6:
                 segments.append(candidate)
                 remaining -= dp_full
                 t_now += seg_remaining
@@ -250,21 +250,21 @@ class PreAccelerateControl(UpstreamController):
     def __init__(
         self,
         vu: float,
-        j_max: float,
+        j_u_max: float,
         a_max: float,
-        a_max_acc: float,
-        v_max_up: float,
+        a_u_max: float,
+        v_u_max: float,
     ) -> None:
         super().__init__(vu)
-        self._j_max = j_max
+        self._j_max = j_u_max
         self._a_max = a_max              # deceleration bound (Pi_k^dec)
-        self._a_max_acc = a_max_acc      # acceleration bound (Pi_k^acc)
-        self._v_max_up = v_max_up
-        self._dv_max = v_max_up - vu
+        self._a_max_acc = a_u_max      # acceleration bound (Pi_k^acc)
+        self._v_max_up = v_u_max
+        self._dv_max = v_u_max - vu
         self._t_last_recovery: float = 0.0
 
         # Pi_1^acc starts immediately
-        if a_max_acc > 0:
+        if a_u_max > 0:
             self._append_acceleration(0.0)
 
     # ------------------------------------------------------------------
