@@ -42,8 +42,6 @@ class KSBSimulation:
         Lmin_factor = float(cfg.get("Lmin_factor", 1.25))
         Lmin = Lmin_factor * self.input_length
         Ls = np.array(self.n_buffer_seg * [self.L_buffer / self.n_buffer_seg])
-        assert np.all(Ls >= Lmin), \
-            "All buffer sections must be at least Lmin_factor * input_length"
 
         self.slot_length = float(cfg.get("slot_length", 0.40))
         self.gap_mean = float(cfg.get("input_gap_mean", 0.80))
@@ -89,12 +87,13 @@ class KSBSimulation:
         self.j_u_max = float(cfg.get('j_u_max', 100.))
         self.a_u_max = float(cfg.get('a_u_max', 2.0))
         self.v_u_max = float(cfg.get('v_u_max', 2.0))
-        self._u_control = PreAccelerateControl(vu = self.vu, 
-                                               j_u_max = self.j_u_max,
-                                               a_max = self.Amax, 
-                                               a_u_max = self.a_u_max,
-                                               v_u_max= self.v_u_max,
-                                               )
+        self._u_control = ConstantVelocityControl(self.vu)
+        # self._u_control = PreAccelerateControl(vu = self.vu, 
+        #                                        j_u_max = self.j_u_max,
+        #                                        a_max = self.Amax, 
+        #                                        a_u_max = self.a_u_max,
+        #                                        v_u_max= self.v_u_max,
+        #                                        )
                                                
         self._d_solver = LinearTrajectorySolver()
         self._registrar = RegistrarProfile(
@@ -104,12 +103,6 @@ class KSBSimulation:
             input_length=self.input_length,
             j_max=self.jmax,
             a_max=self.Amax,
-        )
-        print(
-            f"Registrar: v_in={self.v_buff_out:.3f} → v_out={self.vd:.3f}, "
-            f"T_active={self._registrar.T_active:.4f}s, "
-            f"T_coast={self._registrar.T_coast:.4f}s, "
-            f"T_total={self._registrar.T_total:.4f}s"
         )
 
 
@@ -124,10 +117,6 @@ class KSBSimulation:
         x0_upstream = np.array([0.0, vu, 0.0])
 
         # 1) Spawn times
-        # t_spawn = utils.input_spawn_times(batch = self.batch, v0=vu, 
-        #                                   mean=self.gap_mean, std=self.gap_std,
-        #                                   min=self.input_length, seed=seed)
-
         t_spawn = utils.input_spawn_times_ar1(
             self.batch,
             v0=vu,

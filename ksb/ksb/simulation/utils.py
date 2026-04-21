@@ -191,31 +191,17 @@ def belt_lengths(
     gamma: float = 0.0,
 ) -> np.ndarray:
     """Generate N belt lengths summing to L_total, each >= L_min.
-
-    Shaped by a log-quadratic softmax over centered indices.
-
-    Parameters
-    ----------
-    N : number of belts
-    L_total : total length
-    L_min : per-belt minimum length
-    beta : skew parameter
-    gamma : curvature parameter
-
-    Returns
-    -------
-    np.ndarray of shape (N,)
+    Shaped by a log-quadratic softmax over centered, normalized indices.
     """
     if L_total < N * L_min:
         raise ValueError("Infeasible: L_total < N * L_min")
-
     R = L_total - N * L_min
-    k = np.arange(1, N + 1) - (N + 1) / 2.0
+    # centered, normalized indices: ~[-1, 1] for N >= 2
+    k = (np.arange(1, N + 1) - (N + 1) / 2.0) / max((N - 1) / 2.0, 1.0)
     w = np.exp(beta * k + gamma * (k ** 2))
     w_sum = w.sum()
     if not np.isfinite(w_sum) or w_sum <= 0:
         raise ValueError("Numerical issue: weights collapsed.")
-
     p = w / w_sum
     return L_min + R * p
 
