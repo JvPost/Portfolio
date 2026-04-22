@@ -5,7 +5,15 @@
       "Bash(python:*)",
       "Bash(jupyter nbconvert:*)",
       "Bash(python3 run_sim.py --seed 42)",
-      "Bash(conda run:*)"
+      "Bash(conda run:*)",
+      "Bash(conda env *)",
+      "Bash(/home/marco/miniconda3/envs/ksb/bin/python -m pytest /home/marco/repos/portfolio/ksb/tests/analysis/test_cost.py -v)",
+      "Bash(/home/marco/miniconda3/envs/ksb/bin/python *)",
+      "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python -m pytest tests/analysis/test_cost.py -v -p no:cacheprovider)",
+      "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python -m pytest tests/analysis/ -v -p no:cacheprovider)",
+      "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python run_sim.py --solver scurve --seed 42 --batch 20)",
+      "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python run_sim.py --seed 42)",
+      "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python -m jupyter nbconvert --to notebook --execute --inplace plot_cost_matrix.ipynb)"
     ]
   }
 }
