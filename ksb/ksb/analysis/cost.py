@@ -16,7 +16,12 @@ class BBCostResult:
     C: np.ndarray          # (b-1, N_B) minimum transition time; +inf where infeasible
     a_peak: np.ndarray     # (b-1, N_B) signed peak/trough acceleration of chosen case
     case: np.ndarray       # (b-1, N_B) int8: +1 up, -1 down, 0 infeasible
-    feasible: np.ndarray   # (b-1, N_B) bool
+    primitive_exists: np.ndarray   # (b-1, N_B) bool
+        # Whether a jerk-bounded bang-bang profile exists between the endpoint
+        # kinematic states (v-, a-) -> (v+, a+). Note: this is NOT the same as
+        # "feasible in the design objective sense" — that requires C <= W
+        # (the primitive fits in the available time window). For budget-feasibility,
+        # compare C against events.W or use compute_Phi_bb.
 
 
 def compute_C_bb(events: SegmentEvents, j_max: float) -> BBCostResult:
@@ -49,9 +54,9 @@ def compute_C_bb(events: SegmentEvents, j_max: float) -> BBCostResult:
     case[down_wins] = -1
 
     a_peak = np.where(up_wins, a_peak_up, np.where(down_wins, a_peak_down, 0.0))
-    feasible = feasible_up | feasible_down
+    primitive_exists = feasible_up | feasible_down
 
-    return BBCostResult(C=C, a_peak=a_peak, case=case, feasible=feasible)
+    return BBCostResult(C=C, a_peak=a_peak, case=case, primitive_exists=primitive_exists)
 
 
 def compute_S_bb(events: SegmentEvents, j_max: float) -> np.ndarray:

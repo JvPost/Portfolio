@@ -13,7 +13,9 @@
       "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python -m pytest tests/analysis/ -v -p no:cacheprovider)",
       "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python run_sim.py --solver scurve --seed 42 --batch 20)",
       "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python run_sim.py --seed 42)",
-      "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python -m jupyter nbconvert --to notebook --execute --inplace plot_cost_matrix.ipynb)"
+      "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python -m jupyter nbconvert --to notebook --execute --inplace plot_cost_matrix.ipynb)",
+      "Bash(cat)",
+      "Read(//tmp/**)"
     ]
   }
 }

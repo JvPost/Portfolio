@@ -44,6 +44,9 @@ ITEM_COLORS = [(80, 140, 220), (60, 110, 190)]   # alternating blue shades
 ITEM_RED    = (220,  60,  60)
 ITEM_BORDER = ( 40,  40,  60)
 
+ITEM_RED_BUDGET  = (220,  60,  60)   # budget-infeasible (soft miss)
+ITEM_RED_OVERLAP = (150,  20,  30)   # overlap/collision (physical crash)
+
 SLOT_COLOR  = ( 30,  30,  40)
 
 HUD_BG      = ( 30,  32,  36)
@@ -56,10 +59,15 @@ MIN_SPEED = 1.0 / 16.0
 
 
 # ---------------------------------------------------------------------------
-# Helper
+# Helpers
 # ---------------------------------------------------------------------------
 def _px(metres: float, ppm: float) -> int:
     return int(round(metres * ppm))
+
+
+def _blend_50(fg: tuple, bg: tuple) -> tuple:
+    """50/50 RGB blend. Used for 'persisted error' shading."""
+    return tuple((f + b) // 2 for f, b in zip(fg, bg))
 
 
 # ---------------------------------------------------------------------------
@@ -154,10 +162,6 @@ class KSBViewer:
         # ------------------------------------------------------------------
         self.n_items      = len(result.t_spawn)
         self.n_skips      = len(result.skip_indices)
-        self.n_violations = sum(
-            1 for p in result.pair_records
-            if p.min_gap is not None and p.min_gap < self.gap_min
-        )
         self.solver_name = cfg.get("solver_name", "")
 
         # ------------------------------------------------------------------
@@ -179,6 +183,84 @@ class KSBViewer:
         # HUD rect
         hud_top = MARGIN + LANE_H
         self.hud_rect = pygame.Rect(0, hud_top, self.win_w, HUD_H + MARGIN)
+
+        # Segment colors cache (updated each frame in _draw)
+        self._segment_colors: dict = {}
+
+    # ------------------------------------------------------------------
+    # Helper methods
+    # ------------------------------------------------------------------
+    def _compute_segment_colors(self, t: float) -> dict:
+        """Per-segment color for buffer segments at time t.
+
+        Two severity levels, each with a live and a persisted phase:
+          - overlap  (W[i,k] < 0)       : physical collision on segment k
+          - budget   (C[i,k] > W[i,k])  : correction didn't fit in window
+        Overlap implies budget (strictly more severe); overlap wins ties.
+
+        Phases per pair-segment:
+          live      : t in [min(t_out, t_in), max(t_out, t_in)]
+                      — the pair is straddling k.
+          persisted : t in (max(t_out, t_in), t_out[i+1, k]]
+                      — the pair has left k, but the next pair hasn't
+                      claimed it yet. We keep the error visible so viewers
+                      don't miss the moment.
+
+        Aggregation priority (highest → lowest):
+          1. overlap live
+          2. budget live
+          3. overlap persisted
+          4. budget persisted
+          5. (no entry → BUFFER_COLOR)
+        Severity outranks phase: a lingering overlap is worse than a live
+        budget-miss, because overlap is a physical collision while budget-
+        miss is a soft missed correction that might be absorbed downstream.
+        """
+        if self.events is None or self.cost is None:
+            return {}
+
+        t_out = self.events.t_out            # (n_pairs, N_B)
+        t_in  = self.events.t_in             # (n_pairs, N_B)
+        W     = self.events.W                # = t_in - t_out
+        C     = self.cost.C                  # (n_pairs, N_B)
+
+        n_pairs, N_B = t_out.shape
+
+        # Severity masks (per pair-segment, time-independent)
+        overlap = W < 0.0                    # physical collision
+        budget  = (C > W) & ~overlap         # soft budget miss
+
+        # Co-residence interval bounds
+        lo = np.minimum(t_out, t_in)
+        hi = np.maximum(t_out, t_in)
+
+        # Persistence cap: t_out of the NEXT pair on the same segment.
+        # For i == n_pairs - 1 there is no next pair → cap = +inf.
+        next_cap = np.full_like(t_out, np.inf)
+        if n_pairs >= 2:
+            next_cap[:-1, :] = t_out[1:, :]
+
+        live      = (lo <= t) & (t <= hi)
+        persisted = (t > hi) & (t <= next_cap)
+
+        # Priority stacking: paint in reverse priority order so highest
+        # priority overwrites. Build a dict of segment → color.
+        colors: dict = {}
+
+        def _paint(mask_2d: np.ndarray, color: tuple) -> None:
+            # mask_2d shape (n_pairs, N_B). Color segment k if any pair
+            # contributes at this priority level.
+            hit = mask_2d.any(axis=0)
+            for k in np.flatnonzero(hit).tolist():
+                colors[k] = color
+
+        # Apply in order of ASCENDING priority so higher priorities overwrite.
+        _paint(persisted & budget,  _blend_50(ITEM_RED_BUDGET,  BUFFER_COLOR))
+        _paint(persisted & overlap, _blend_50(ITEM_RED_OVERLAP, BUFFER_COLOR))
+        _paint(live      & budget,  ITEM_RED_BUDGET)
+        _paint(live      & overlap, ITEM_RED_OVERLAP)
+
+        return colors
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -249,6 +331,7 @@ class KSBViewer:
         t: float,
     ) -> None:
         screen.fill(BG_COLOR)
+        self._segment_colors = self._compute_segment_colors(t)
         self._draw_zones(screen, font_small)
         self._draw_slot_separators(screen, t)
 
@@ -266,8 +349,8 @@ class KSBViewer:
         self._draw_hud(screen, font_small, t)
 
     def _get_buffer_segment_color(self, segment_idx: int) -> tuple:
-        """Compute color for a buffer segment. Override based on events/cost here."""
-        return BUFFER_COLOR
+        """Compute color for a buffer segment based on feasibility state."""
+        return getattr(self, "_segment_colors", {}).get(segment_idx, BUFFER_COLOR)
 
     def _draw_zones(
         self,
@@ -448,7 +531,7 @@ class KSBViewer:
             f"t = {t:7.3f} s",
             f"{self.speed:g}x",
             self.solver_name or "-",
-            f"items: {self.n_items}  skips: {self.n_skips}  violations: {self.n_violations}",
+            f"items: {self.n_items}  skips: {self.n_skips}",
         ]
         text = "   |   ".join(parts)
         surf, _ = font.render(text, HUD_TEXT)

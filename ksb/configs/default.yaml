@@ -1,11 +1,11 @@
-solver: quintic
-# solver: scurve
+# solver: quintic
+solver: scurve
 jmax: 100.0
 Vmax: 3.0
 Amax: 8.5
 L_upstream: 2.0
 L_buffer: 3
-L_registrar: 1.0
+L_registrar: 0.5
 L_downstream: 2.0
 input_length: 0.32
 
@@ -26,11 +26,11 @@ end_margin: 0.0
 
 # upstream
 j_u_max: 100.0
-a_u_max: 8.5
+a_u_max: 4.25
 v_u_max: 2.0
 
 # buffer
-v_buff_out: 2.0 # v^{BR}
+v_buff_out: 1.5 # v^{BR}
 
 # registrar
 
