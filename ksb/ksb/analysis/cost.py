@@ -56,7 +56,8 @@ def compute_C_bb(events: SegmentEvents, j_max: float) -> BBCostResult:
 
 def compute_S_bb(events: SegmentEvents, j_max: float) -> np.ndarray:
     """Slack matrix W - C for bang-bang primitive."""
-    return events.W - compute_C_bb(events, j_max).C
+    cost: BBCostResult = compute_C_bb(events, j_max) 
+    return events.W - cost.C
 
 
 def compute_Phi_bb(events: SegmentEvents, j_max: float) -> np.ndarray:

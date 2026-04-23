@@ -87,13 +87,13 @@ class KSBSimulation:
         self.j_u_max = float(cfg.get('j_u_max', 100.))
         self.a_u_max = float(cfg.get('a_u_max', 2.0))
         self.v_u_max = float(cfg.get('v_u_max', 2.0))
-        self._u_control = ConstantVelocityControl(self.vu)
-        # self._u_control = PreAccelerateControl(vu = self.vu, 
-        #                                        j_u_max = self.j_u_max,
-        #                                        a_max = self.Amax, 
-        #                                        a_u_max = self.a_u_max,
-        #                                        v_u_max= self.v_u_max,
-        #                                        )
+        # self._u_control = ConstantVelocityControl(self.vu)
+        self._u_control = PreAccelerateControl(vu = self.vu, 
+                                               j_u_max = self.j_u_max,
+                                               a_max = self.Amax, 
+                                               a_u_max = self.a_u_max,
+                                               v_u_max= self.v_u_max,
+                                               )
                                                
         self._d_solver = LinearTrajectorySolver()
         self._registrar = RegistrarProfile(

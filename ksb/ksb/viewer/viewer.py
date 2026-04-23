@@ -5,7 +5,7 @@ Only this file and run_viewer.py are allowed to import pygame.
 from __future__ import annotations
 
 import math
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 import os
 
@@ -14,10 +14,14 @@ import pygame
 import pygame._freetype as _ft   # C extension — avoids pygame.font/sysfont circular import
 
 from ksb.motion.trajectories import P, V, A
+from ksb.simulation.result import SimulationResult
+
+if TYPE_CHECKING:
+    from ksb.analysis.events import SegmentEvents
+    from ksb.analysis.cost import BBCostResult
 
 # Built-in font bundled with pygame (no system font lookup needed)
 _FONT_PATH = os.path.join(os.path.dirname(pygame.__file__), "freesansbold.ttf")
-from ksb.simulation.result import SimulationResult
 
 
 # ---------------------------------------------------------------------------
@@ -66,8 +70,23 @@ class KSBViewer:
 
     Usage::
 
-        viewer = KSBViewer(result, cfg, speed=1.0, ppm=120)
+        viewer = KSBViewer(result, cfg, speed=1.0, ppm=120, events=None, cost=None)
         viewer.run()
+
+    Parameters
+    ----------
+    result : SimulationResult
+        Simulation output with trajectories and metrics
+    cfg : dict
+        Configuration dictionary (must match result)
+    speed : float
+        Initial playback multiplier (default 1.0)
+    ppm : int
+        Pixels per metre for rendering (default 120)
+    events : SegmentEvents, optional
+        Segment event times and kinematics (enables segment coloring)
+    cost : BBCostResult, optional
+        Bang-bang cost analysis (enables segment coloring)
 
     Controls
     --------
@@ -86,11 +105,15 @@ class KSBViewer:
         cfg: dict,
         speed: float = 1.0,
         ppm: int = 120,
+        events: Optional[SegmentEvents] = None,
+        cost: Optional[BBCostResult] = None,
     ) -> None:
         self.result = result
         self.cfg    = cfg
         self.speed  = float(speed)
         self.ppm    = int(ppm)
+        self.events = events
+        self.cost   = cost
 
         # ------------------------------------------------------------------
         # Physical dimensions from cfg
@@ -242,6 +265,10 @@ class KSBViewer:
 
         self._draw_hud(screen, font_small, t)
 
+    def _get_buffer_segment_color(self, segment_idx: int) -> tuple:
+        """Compute color for a buffer segment. Override based on events/cost here."""
+        return BUFFER_COLOR
+
     def _draw_zones(
         self,
         screen: pygame.Surface,
@@ -254,14 +281,29 @@ class KSBViewer:
         r_up = pygame.Rect(lane.left, y, self.x_buf_start - lane.left, h)
         pygame.draw.rect(screen, UPSTREAM_COLOR, r_up)
 
-        # Buffer zone
-        r_buf = pygame.Rect(self.x_buf_start, y, self.x_reg_start - self.x_buf_start, h)
-        pygame.draw.rect(screen, BUFFER_COLOR, r_buf)
+        # Buffer zone — draw individual segments as rectangles
+        section_len = self.L_buf / self.n_buffer_seg
+        for k in range(self.n_buffer_seg):
+            px_left = MARGIN + _px(self.L_up + k * section_len, self.ppm)
+            px_right = MARGIN + _px(self.L_up + (k + 1) * section_len, self.ppm)
+            segment_w = px_right - px_left
+            seg_rect = pygame.Rect(px_left, y, segment_w, h)
+            seg_color = self._get_buffer_segment_color(k)
+            pygame.draw.rect(screen, seg_color, seg_rect)
+            # Draw segment border
+            pygame.draw.rect(screen, ZONE_LINE_COLOR, seg_rect, width=1)
 
         # Registrar zone (may be zero-width if L_reg == 0)
         if self.x_dn_start > self.x_reg_start:
             r_reg = pygame.Rect(self.x_reg_start, y, self.x_dn_start - self.x_reg_start, h)
             pygame.draw.rect(screen, REGISTRAR_COLOR, r_reg)
+            # Registrar section dividers
+            if self.n_reg_seg > 1:
+                reg_section_len = self.L_reg / self.n_reg_seg
+                reg_div_color = (90, 100, 155)
+                for k in range(1, self.n_reg_seg):
+                    px = MARGIN + _px(self.L_up + self.L_buf + k * reg_section_len, self.ppm)
+                    pygame.draw.line(screen, reg_div_color, (px, y + 4), (px, y + h - 4), 1)
 
         # Downstream zone
         r_dn = pygame.Rect(self.x_dn_start, y, self.x_right - self.x_dn_start, h)
@@ -273,21 +315,6 @@ class KSBViewer:
         # Zone boundary lines
         for bx in (self.x_buf_start, self.x_reg_start, self.x_dn_start):
             pygame.draw.line(screen, ZONE_LINE_COLOR, (bx, y), (bx, y + h), 1)
-
-        # Buffer section dividers
-        div_color = (110, 120, 160)
-        section_len = self.L_buf / self.n_buffer_seg
-        for k in range(1, self.n_buffer_seg):
-            px = MARGIN + _px(self.L_up + k * section_len, self.ppm)
-            pygame.draw.line(screen, div_color, (px, y + 4), (px, y + h - 4), 1)
-
-        # Registrar section dividers
-        if self.n_reg_seg > 1:
-            reg_section_len = self.L_reg / self.n_reg_seg
-            reg_div_color = (90, 100, 155)
-            for k in range(1, self.n_reg_seg):
-                px = MARGIN + _px(self.L_up + self.L_buf + k * reg_section_len, self.ppm)
-                pygame.draw.line(screen, reg_div_color, (px, y + 4), (px, y + h - 4), 1)
 
         # Zone labels
         labels = [
@@ -362,27 +389,6 @@ class KSBViewer:
             p_trails[i] = p_lead - self.input_length
 
             X[i] = state
-
-        # Second pass: gap warnings — flag when both items are in buffer or registrar
-        buf_start = self.L_up
-        buf_end   = self.L_up + self.L_buf 
-
-        for i in range(n - 1):
-            if p_leads[i] is None or p_leads[i + 1] is None:
-                continue
-            # Both leading edges must be within the buffer zone
-            if not (buf_start <= p_leads[i] and  # leading edge leading input 
-                    buf_end >= p_trails[i] and # trailing edge leading input
-                    buf_start <= p_leads[i + 1] <= buf_end): # following input 
-                continue
-
-            if X[i][A] == .0 and X[i+1][A] == 0 and  X[i][V] == X[i+1][V]:
-                continue
-            
-            gap = p_leads[i] - p_leads[i + 1]
-            if gap < self.gap_min:
-                colors[i]     = ITEM_RED
-                colors[i + 1] = ITEM_RED
 
         return rects, colors
 
