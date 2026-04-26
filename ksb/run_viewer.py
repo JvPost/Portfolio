@@ -7,6 +7,7 @@ Usage:
 import argparse
 from pathlib import Path
 
+import numpy as np
 import yaml
 
 from ksb.planning.solvers.quintic import QuinticSolver
@@ -14,7 +15,7 @@ from ksb.planning.solvers.scurve import SCurveSolver
 from ksb.simulation.ksb_simulation import KSBSimulation
 from ksb.viewer.viewer import KSBViewer
 from ksb.analysis.events import compute_segment_events
-from ksb.analysis.cost import compute_C_bb
+from ksb.analysis.cost import compute_C_bb, compute_S_bb
 
 _CONFIG_DIR = Path(__file__).parent / "configs"
 
@@ -37,8 +38,7 @@ def main():
     result = KSBSimulation(cfg=cfg).run(seed=args.seed)
     print(f"  assigned_slots : {result.assigned_slots}")
     print(f"  skip_indices   : {result.skip_indices}")
-    print(f"  violations     : {sum(1 for p in result.pair_records if p.min_gap is not None and p.min_gap < cfg['L_buffer'] / cfg['n_buffer_seg'] * 2)}")
-
+    
     events = None
     cost = None
     events = compute_segment_events(
@@ -50,7 +50,9 @@ def main():
         N_B=int(cfg.get("n_buffer_seg", 5)),
     )
     cost = compute_C_bb(events, float(cfg.get("jmax", 50.0)))
+    slack = compute_S_bb(events, float(cfg.get("jmax", 50.0)))
 
+    print(f"  violations     : {np.sum(slack < 0)}")
     print("Launching viewer…  SPACE to start, ESC to quit.")
 
     KSBViewer(result, cfg, events=events, cost=cost).run()

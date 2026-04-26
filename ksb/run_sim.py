@@ -5,6 +5,7 @@ Usage:
     python run_sim.py [--seed INT] [--config NAME]
 """
 import argparse
+import time
 from pathlib import Path
 
 import numpy as np
@@ -34,7 +35,11 @@ def main():
     print(f"Batch  : {cfg['batch']}")
     print()
 
+    start_time = time.time()
     result = KSBSimulation(cfg=cfg).run(seed=args.seed)
+    elapsed = time.time() - start_time
+    print(f"Simulation time : {elapsed:.3f} s")
+    print()
 
     # ── Slot assignment ──────────────────────────────────────────────────────
     print("=== Slot assignment ===")

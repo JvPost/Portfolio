@@ -32,39 +32,34 @@ class UpstreamController(ABC):
         self._vu = vu
         self._timeline: List[Segment] = []
         self._t_end: float = 0.0
-        self._last_t_spawn: float = -np.inf
 
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
     def subsection(
         self,
-        t_spawn: float,
-        distance: float,
+        t0: float,
+        dp: float,
     ) -> CompositeTrajectory:
         """Return a CompositeTrajectory covering exactly `distance` metres,
-        starting at t_spawn under the current jerk timeline.
+        starting at t0 under the current jerk timeline.
 
-        The initial state [v, a] at t_spawn is derived internally from T.
+        The initial state [v, a] at t0 is derived internally from T.
 
         Args:
-            t_spawn:  absolute spawn time of this input (s)
-            distance: upstream control distance to cover (m)
+            t0:  absolute spawn time of this input (s)
+            dp:  control distance to cover (m)
 
         Returns:
             CompositeTrajectory in delta-position semantics (p starts at 0)
         """
-        assert t_spawn > self._last_t_spawn, (
-            f"Spawn times must be strictly increasing: "
-            f"got {t_spawn} after {self._last_t_spawn}"
-        )
-        self._last_t_spawn = t_spawn
-
-        x0 = self.state_at(t_spawn)
+        t0 = float(t0)
+        dp = float(dp)
+        x0 = self.state_at(t0)
 
         segments: List[ConstantJerkTrajectory] = []
-        remaining = distance
-        t_now = t_spawn
+        remaining = dp
+        t_now = t0
         v_now = float(x0[V])
         a_now = float(x0[A])
 

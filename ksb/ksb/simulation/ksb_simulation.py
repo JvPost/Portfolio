@@ -60,7 +60,6 @@ class KSBSimulation:
         self.vd = self.rd * self.slot_length
 
         self.v_buff_out = float(cfg.get('v_buff_out', 2.0)) # v^{BR}
-        assert self.v_buff_out >= self.vd
 
         self.slot_period = self.slot_length / self.vd
 
@@ -117,7 +116,7 @@ class KSBSimulation:
         x0_upstream = np.array([0.0, vu, 0.0])
 
         # 1) Spawn times
-        t_spawn = utils.input_spawn_times_ar1(
+        batch_t_spawn = utils.input_spawn_times_ar1(
             self.batch,
             v0=vu,
             mean=self.gap_mean,
@@ -134,10 +133,15 @@ class KSBSimulation:
         upstream_ctrl_trajectories:List[TrajectoryProfile] = []
         slot_idx = 0 # find a better heuristic than just 0
 
+        __upstream_ctrl_traj = self._u_control.subsection(.0, L_upstream_ctrl)
+        __T_upstream = __upstream_ctrl_traj.T
+        __vf_upstream = __upstream_ctrl_traj.eval(__T_upstream)[V]
+        slot_idx = int((__T_upstream + self.L_buffer_ctrl / __vf_upstream) // slot_period)
+
         prev_slot_idx = None
         
         # Upstream control & slot assignments, which also computes buffer trajectory.
-        for i, t0 in enumerate(t_spawn):
+        for i, t0 in enumerate(batch_t_spawn):
             upstream_ctrl_traj = self._u_control.subsection(t0, L_upstream_ctrl)
 
             t_in = t0 + upstream_ctrl_traj.T
@@ -175,7 +179,7 @@ class KSBSimulation:
         )
 
         # 4) Phase errors
-        projected_no_corr = t_spawn + (L_upstream + self.L_buffer) / vu
+        projected_no_corr = batch_t_spawn + (L_upstream + self.L_buffer) / vu
         phi_u = (assigned_slot_times - projected_no_corr) / slot_period
 
         projected_no_corr_at_entry = t_control_start + L_buffer_ctrl / vu
@@ -222,7 +226,7 @@ class KSBSimulation:
         if self.batch > 1:
             segment_events = compute_segment_events(
                 total_trajectories=total_trajectories,
-                t_spawn=t_spawn,
+                t_spawn=batch_t_spawn,
                 input_length=self.input_length,
                 L_upstream=L_upstream,
                 L_buffer=self.L_buffer,
@@ -239,7 +243,7 @@ class KSBSimulation:
             [traj.find_time_at_position(p_window_start) for traj in total_trajectories]
             )
 
-        input_delta_t = np.diff(t_spawn + t_i_boundary_upstream_buffer) 
+        input_delta_t = np.diff(batch_t_spawn + t_i_boundary_upstream_buffer) 
         
         # Relative time windows for i and j = i+1. We start keeping track of time
         # when input j enters the buffer. 
@@ -274,7 +278,7 @@ class KSBSimulation:
 
         return SimulationResult(
             cfg=self.cfg,
-            t_spawn=t_spawn,
+            t_spawn=batch_t_spawn,
             t_control_start=t_control_start,
             assigned_slots=assigned_slots,
             time_horizons=buffer_T_array,
