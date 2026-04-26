@@ -10,11 +10,8 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from ksb.planning.solvers.quintic import QuinticSolver
-from ksb.planning.solvers.scurve import SCurveSolver
 from ksb.simulation.ksb_simulation import KSBSimulation
 from ksb.viewer.viewer import KSBViewer
-from ksb.analysis.events import compute_segment_events
 from ksb.analysis.cost import compute_C_bb, compute_S_bb
 
 _CONFIG_DIR = Path(__file__).parent / "configs"
@@ -39,16 +36,7 @@ def main():
     print(f"  assigned_slots : {result.assigned_slots}")
     print(f"  skip_indices   : {result.skip_indices}")
     
-    events = None
-    cost = None
-    events = compute_segment_events(
-        total_trajectories=result.composite_trajectories,
-        t_spawn=result.t_spawn,
-        input_length=float(cfg.get("input_length", 0.32)),
-        L_upstream=float(cfg.get("L_upstream", 1.0)),
-        L_buffer=float(cfg.get("L_buffer", 2.0)),
-        N_B=int(cfg.get("n_buffer_seg", 5)),
-    )
+    events = result.segment_events
     cost = compute_C_bb(events, float(cfg.get("jmax", 50.0)))
     slack = compute_S_bb(events, float(cfg.get("jmax", 50.0)))
 

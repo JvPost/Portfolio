@@ -15,7 +15,9 @@
       "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python run_sim.py --seed 42)",
       "Bash(PYTHONPATH=\"\" /home/marco/miniconda3/envs/ksb/bin/python -m jupyter nbconvert --to notebook --execute --inplace plot_cost_matrix.ipynb)",
       "Bash(cat)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(conda run *)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }

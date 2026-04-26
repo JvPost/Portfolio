@@ -1,5 +1,7 @@
 # Per-Segment Synchronization — Budget, Cost, Slack, Design Objective
 
+This document develops the formal apparatus for measuring synchronization feasibility on the buffer. It assumes the system definitions, distributional models, and skip mechanism established in *Buffer formalization*, and provides the per-segment slack matrix and design objective $\mathcal{L}$ referenced by the *KSB system — Design Narrative*. The conceptual reading of the buffer as a control system — open-loop per segment, semi-closed-loop across segments — is developed in *Buffer formalization* §5; this document is the formal substrate that view sits on.
+
 The feasibility question at segment $k$ between inputs $i$ and $i+1$ reduces to: *is the free-window long enough for the segment to execute the required state transition under its own kinematic bounds?* This splits cleanly into **how much time we have**, **how much time we need**, their difference, and the scalar objective that drives design optimization.
 
 ## 1. Boundaries, segments, events
@@ -92,16 +94,17 @@ $$
 S^{\mathcal{P}}_{i,k} \;=\; W_{i,k} - C^{\mathcal{P}}_{i,k}.
 $$
 
-| Value | Meaning |
-|---|---|
-| $S^{\mathcal{P}}_{i,k} > 0$ | Segment $k$ completes the transition with margin |
-| $S^{\mathcal{P}}_{i,k} = 0$ | Transition saturates the free window |
-| $S^{\mathcal{P}}_{i,k} < 0$ | No trajectory under $\mathcal{P}$ fits in $\mathcal{W}_{i,k}$ |
+| Value                       | Meaning                                                                                                               |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| $S^{\mathcal{P}}_{i,k} > 0$ | Segment $k$ completes the transition with margin                                                                      |
+| $S^{\mathcal{P}}_{i,k} = 0$ | Transition saturates the free window                                                                                  |
+| $S^{\mathcal{P}}_{i,k} < 0$ | The primitive fits in principle but exceeds $W_{i,k}$ — no trajectory under $\mathcal{P}$ fits in $\mathcal{W}_{i,k}$ |
 
 The ordering $C^{\text{BB}} \le C^{\mathcal{P}_3}$ induces $S^{\mathcal{P}_{\text{BB}}} \ge S^{\mathcal{P}_3}$ element-wise, so bang-bang slack is a feasibility *ceiling* and cubic slack a *floor*. Cells with $S^{\mathcal{P}_3}_{i,k} < 0 \le S^{\mathcal{P}_{\text{BB}}}_{i,k}$ are precisely where the design must fall back from cubic to bang-bang.
 
-$\mathbf{S}$ is a diagnostic object. The scalar used to drive design optimization is defined in §4.
+**Envelope-sentinel regime.** Primitives may additionally be undefined on cells where the required $(v^-, a^-, v^+, a^+)$ violates the simplifying assumptions of the closed form — e.g. the jerk-only bang-bang derivation assumes $|a_p| \le a^B_\max$ and $|v| \le v^B_\max$ along the profile ([[Buffer minimum-time cost]] §5.4–§5.5). When an implementation encounters such a cell it returns $C^{\mathcal{P}}_{i,k} = +\infty$, yielding $S^{\mathcal{P}}_{i,k} = -\infty$. This is a *sentinel* distinct from the ordinary $S < 0$ case: ordinary $S < 0$ means the primitive's closed form is valid but its minimum time exceeds the budget, while $S = -\infty$ means the primitive's closed form is itself invalid for these BCs and a richer primitive (a- or v-saturated extension) is required. Within the intended KSB operating range the sentinel regime should be empty; its occurrence is diagnostic, not nominal.
 
+$\mathbf{S}$ is a diagnostic object. The scalar used to drive design optimization is defined in §4.
 ### 3.4 Boundary asymmetry
 
 Not all boundaries are equal. At a generic *interior* boundary $k \in \{1, \ldots, N^B - 1\}$, both the leader-hand-off state and the neighbouring follower-demand state are shaped by the buffer's own planning; upstream noise has been partially absorbed, registrar demands haven't yet arrived. The buffer has authority over both endpoints.
@@ -167,10 +170,19 @@ $$
 \mathcal{L}(\boldsymbol{\theta}) \;=\; \underbrace{\sum_{i,k} \Phi^{\mathcal{P}}_{i,k}}_{\text{feasibility (NLL)}} \;+\; \lambda_U \underbrace{\sum_{i,k} U^{\mathcal{P}}_{i,k}}_{\text{utilization prior}} \;+\; \underbrace{\lambda_L\, L^B}_{\text{size prior}} \;+\; \underbrace{\lambda_N\, N^B}_{\text{complexity prior}}.
 $$
 
-The three weights $(\lambda_U, \lambda_L, \lambda_N)$ are exchange rates with nontrivial units ($\lambda_U$ in s, $\lambda_L$ in s²/m, $\lambda_N$ in s²); they should be calibrated rather than guessed, either by physical reasoning or by Pareto-style sweeping.
+The three weights are exchange rates between terms with unequal units, so each has its own dimension:
+
+| Weight | Units | Reads as |
+|---|---|---|
+| $\lambda_U$ | s | "how many s² of infeasibility is 1 s of slack worth?" |
+| $\lambda_L$ | s²/m | "how many s² of infeasibility is 1 m of buffer worth?" |
+| $\lambda_N$ | s² | "how many s² of infeasibility is 1 segment worth?" |
+
+They should be calibrated rather than guessed, either by physical reasoning or by Pareto-style sweeping.
 
 Which components of $\nabla_{\boldsymbol{\theta}} \mathcal{L}$ are nonzero depends on what is placed in the continuous part of $\boldsymbol{\theta}$; the objective does not itself decide whether the response to infeasibility is "grow $L^B$" or "redistribute via $\beta, \gamma$" — the chain rule does.
 
+**Sentinel handling.** If any $\Phi^{\mathcal{P}}_{i,k} = +\infty$ (i.e. the primitive's closed form is undefined on that cell; §3.3), $\mathcal{L}$ is also $+\infty$ and gradient-based optimization is not meaningful. The optimizer treats such configurations as out-of-bounds and relies on the outer structure (e.g. barrier from the box constraint $L^B \ge N^B L^B_\min$, or outer sweep over $N^B$) to recover. Sentinel cells at the *optimum* indicate the primitive is wrong for the operating regime — switch to a richer primitive.
 ## 5. Segment-length parametrization
 
 The segment-length vector $\{L^B_k\}_{k=1}^{N^B}$ is parametrized by two scalars $(\beta, \gamma)$ via a log-quadratic softmax over centered, normalized indices:
@@ -247,5 +259,5 @@ The $\lambda_N N^B$ term has no role inside the inner loop — it is a constant 
 ## 7. Relation to existing signals
 
 - **Gap violation** $\mathbf{1}[\min_t g_i(t) < g_{\min}]$ — proxy observable. Binary, whole-buffer, post-hoc. Superseded by $\mathbf{S}$ (diagnostic) and $\Phi$ (optimization signal).
-- **Whole-buffer PairRecord window** — recovered as the $N^B = 1$ collapse: $W_{i,1}$ with $k=1$ spanning the entire buffer equals the current `PairRecord` window width.
+- **Whole-buffer pair window** — recovered as the $N^B = 1$ collapse: $W_{i,1}$ with $k=1$ spanning the entire buffer equals the whole-buffer pair-window width used in earlier diagnostics.
 - **Hard feasibility** of a plan under primitive $\mathcal{P}$: $\Phi^{\mathcal{P}}_{i,k} = 0$ for all $(i,k)$, equivalently $S^{\mathcal{P}}_{i,k} \ge 0$ for all $(i,k)$.

@@ -41,7 +41,9 @@ class KSBSimulation:
 
         Lmin_factor = float(cfg.get("Lmin_factor", 1.25))
         Lmin = Lmin_factor * self.input_length
-        Ls = np.array(self.n_buffer_seg * [self.L_buffer / self.n_buffer_seg])
+        beta = float(cfg.get("beta", 0.0))
+        gamma = float(cfg.get("gamma", 0.0))
+        self.Ls = utils.belt_lengths(self.n_buffer_seg, self.L_buffer, Lmin, beta, gamma)
 
         self.slot_length = float(cfg.get("slot_length", 0.40))
         self.gap_mean = float(cfg.get("input_gap_mean", 0.80))
@@ -106,7 +108,7 @@ class KSBSimulation:
 
 
 
-    def run(self, seed: Optional[int] = None) -> SimulationResult:
+    def run(self, seed: Optional[int] = None, *, skip_pair_records: bool = False) -> SimulationResult:
         vu, vd = self.vu, self.vd
         L_upstream, L_downstream = self.L_upstream, self.L_downstream
         L_buffer_ctrl, L_upstream_ctrl = self.L_buffer_ctrl, self.L_upstream_ctrl
@@ -229,9 +231,8 @@ class KSBSimulation:
                 t_spawn=batch_t_spawn,
                 input_length=self.input_length,
                 L_upstream=L_upstream,
-                L_buffer=self.L_buffer,
-                N_B=self.n_buffer_seg,
-            ) 
+                Ls=self.Ls,
+            )
 
         
         # time computation such that we also keep track of inputs in buffer when 
@@ -264,7 +265,7 @@ class KSBSimulation:
             "t_window_end <= t_window_start — degenerate or inverted window"
 
         pairs: List[PairRecord] = []
-        if self.batch > 1:
+        if self.batch > 1 and not skip_pair_records:
             pairs = compute_pairs(
                 trajectories=total_trajectories,
                 delta_t=input_delta_t,
