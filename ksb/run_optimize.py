@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """Track A: whole-line design optimization via CMA-ES.
 
-Sweeps N^B from N_min to N_max, runs CMA-ES inner solver for each,
-saves per-N^B JSON results and an outer summary.
+Sweeps N^B from N_min to N_max (from optimizer config), runs CMA-ES inner
+solver for each, saves per-N^B JSON results and an outer summary.
+
+Output goes to results/<datetime>/ automatically.
 
 Usage:
-    python run_optimize.py [--N-min 3] [--N-max 20] [--lambda-U 0.05]
-                           [--lambda-L 0.5] [--lambda-T 1.0] [--lambda-N 0.1]
-                           [--popsize 20] [--restarts 4] [--n-seeds 4]
-                           [--config default] [--out results/track_a/]
+    python run_optimize.py
+    python run_optimize.py --system-config default --opt-config quick
+    python run_optimize.py --batch 20   # override batch size for speed
 """
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -22,7 +25,14 @@ import yaml
 
 from ksb.optimization.cma_solver import InnerResult, solve_inner
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-5s  %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 _CONFIG_DIR = Path(__file__).parent / "configs"
+_RESULTS_DIR = Path(__file__).parent / "results"
 
 
 def _result_to_dict(r: InnerResult) -> dict:
@@ -42,54 +52,66 @@ def _result_to_dict(r: InnerResult) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Track A: whole-line design optimization")
-    parser.add_argument("--N-min", type=int, default=3, help="Minimum N^B (default: 3)")
-    parser.add_argument("--N-max", type=int, default=20, help="Maximum N^B (default: 20)")
-    parser.add_argument("--lambda-U", type=float, default=0.05, help="Utilization weight (default: 0.05)")
-    parser.add_argument("--lambda-L", type=float, default=0.5, help="Buffer length weight (default: 0.5)")
-    parser.add_argument("--lambda-T", type=float, default=1.0, help="Throughput ratio weight (default: 1.0)")
-    parser.add_argument("--lambda-N", type=float, default=0.1, help="Segment count weight for outer selection (default: 0.1)")
-    parser.add_argument("--popsize", type=int, default=20, help="CMA-ES population size (default: 20)")
-    parser.add_argument("--restarts", type=int, default=4, help="CMA-ES restarts per N^B (default: 4)")
-    parser.add_argument("--n-seeds", type=int, default=4, help="Seeds per loss evaluation (default: 4)")
-    parser.add_argument("--config", type=str, default="default", help="Config name in configs/ (default: default)")
-    parser.add_argument("--out", type=str, default="results/track_a/", help="Output directory (default: results/track_a/)")
+    parser.add_argument("--system-config", type=str, default="default",
+                        help="System config name in configs/system/ (default: default)")
+    parser.add_argument("--opt-config", type=str, default="default",
+                        help="Optimizer config name in configs/optimizer/ (default: default)")
     parser.add_argument("--batch", type=int, default=None,
-                        help="Override cfg batch size for optimizer (smaller = faster; default: use config value)")
-    parser.add_argument("--max-iter", type=int, default=100,
-                        help="CMA-ES max generations per restart (default: 100)")
+                        help="Override batch size from system config (smaller = faster)")
     args = parser.parse_args()
 
-    with open(_CONFIG_DIR / f"{args.config}.yaml") as f:
+    sys_cfg_path = _CONFIG_DIR / "system" / f"{args.system_config}.yaml"
+    opt_cfg_path = _CONFIG_DIR / "optimizer" / f"{args.opt_config}.yaml"
+
+    with open(sys_cfg_path) as f:
         base_cfg = yaml.safe_load(f)
+    with open(opt_cfg_path) as f:
+        opt_cfg = yaml.safe_load(f)
 
     if args.batch is not None:
         base_cfg["batch"] = args.batch
 
-    out_dir = Path(args.out)
+    # Timestamped output directory
+    run_tag = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out_dir = _RESULTS_DIR / run_tag
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    nb_range = range(args.N_min, args.N_max + 1)
+    # Snapshot the configs used for this run
+    run_info = {
+        "run_tag": run_tag,
+        "system_config": args.system_config,
+        "opt_config": args.opt_config,
+        "system_cfg": base_cfg,
+        "opt_cfg": opt_cfg,
+    }
+    with open(out_dir / "run_info.yaml", "w") as f:
+        yaml.dump(run_info, f, default_flow_style=False)
+
+    nb_range = range(opt_cfg["N_min"], opt_cfg["N_max"] + 1)
     inner_results: dict[int, InnerResult] = {}
     t_wall_start = time.time()
 
-    for nb in nb_range:
+    nb_list = list(nb_range)
+    for nb_idx, nb in enumerate(nb_list):
         t0 = time.time()
+        print(f"\n[{nb_idx+1}/{len(nb_list)}] NB={nb}  starting  "
+              f"(popsize={opt_cfg['popsize']}, max_iter={opt_cfg['max_iter']}, "
+              f"restarts={opt_cfg['restarts']}, n_seeds={opt_cfg['n_seeds']})")
         r = solve_inner(
             n_buffer_seg=nb,
             base_cfg=base_cfg,
-            lambda_U=args.lambda_U,
-            lambda_L=args.lambda_L,
-            lambda_T=args.lambda_T,
-            popsize=args.popsize,
-            max_iter=args.max_iter,
-            n_restarts=args.restarts,
-            n_seeds_loss=args.n_seeds,
+            lambda_U=opt_cfg["lambda_U"],
+            lambda_L=opt_cfg["lambda_L"],
+            lambda_T=opt_cfg["lambda_T"],
+            popsize=opt_cfg["popsize"],
+            max_iter=opt_cfg["max_iter"],
+            n_restarts=opt_cfg["restarts"],
+            n_seeds_loss=opt_cfg["n_seeds"],
             seed=0,
         )
         dt = time.time() - t0
         inner_results[nb] = r
 
-        # Save per-N^B result
         result_path = out_dir / f"inner_NB_{nb:02d}.json"
         with open(result_path, "w") as f:
             json.dump(_result_to_dict(r), f, indent=2)
@@ -105,7 +127,7 @@ def main():
 
     # Outer selection: L*(N^B) + lambda_N * N^B
     outer_scores = {
-        nb: inner_results[nb].L_star + args.lambda_N * nb
+        nb: inner_results[nb].L_star + opt_cfg["lambda_N"] * nb
         for nb in nb_range
     }
     nb_star = min(outer_scores, key=outer_scores.__getitem__)
@@ -115,21 +137,17 @@ def main():
     print(f"Optimal N^B* = {nb_star}  (L* + λ_N·N^B = {outer_scores[nb_star]:.4f})")
 
     outer_summary = {
-        "config": args.config,
-        "lambda_U": args.lambda_U,
-        "lambda_L": args.lambda_L,
-        "lambda_T": args.lambda_T,
-        "lambda_N": args.lambda_N,
-        "N_min": args.N_min,
-        "N_max": args.N_max,
+        "run_tag": run_tag,
+        "system_config": args.system_config,
+        "opt_config": args.opt_config,
+        "opt_cfg": opt_cfg,
         "nb_star": nb_star,
         "outer_scores": {str(nb): outer_scores[nb] for nb in nb_range},
         "inner_results": {str(nb): _result_to_dict(inner_results[nb]) for nb in nb_range},
         "total_wall_time_s": total_time,
     }
 
-    summary_path = out_dir / "outer_summary.json"
-    with open(summary_path, "w") as f:
+    with open(out_dir / "outer_summary.json", "w") as f:
         json.dump(outer_summary, f, indent=2)
 
     print(f"Results written to {out_dir}/")

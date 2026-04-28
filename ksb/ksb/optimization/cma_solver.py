@@ -5,12 +5,16 @@ with multi-restart and best-across-restarts selection.
 """
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass, field
 
 import numpy as np
 import cma
 
 from ksb.optimization.loss import compute_loss, LossResult
+
+log = logging.getLogger(__name__)
 
 
 # Default box bounds for theta_c (lower, upper).
@@ -167,9 +171,17 @@ def solve_inner(
 
     loss_seeds = list(range(n_seeds_loss))
 
+    t_inner_start = time.perf_counter()
+    log.info("NB=%d  starting solve_inner  (popsize=%d  max_iter=%d  restarts=%d  seeds=%d)",
+             n_buffer_seg, popsize, max_iter, n_restarts, n_seeds_loss)
+
+    _eval_count = [0]
+    _eval_t_accum = [0.0]
+
     def objective(theta: np.ndarray) -> float:
         theta_clipped = np.clip(theta, lower, upper)
         cfg = _theta_to_cfg(theta_clipped, base_cfg, n_buffer_seg)
+        t0 = time.perf_counter()
         try:
             lr = compute_loss(
                 cfg,
@@ -178,9 +190,14 @@ def solve_inner(
                 lambda_T=lambda_T,
                 seeds=loss_seeds,
             )
-            return lr.L
-        except Exception:
-            return float("inf")
+            result = lr.L
+        except Exception as exc:
+            log.debug("objective raised %s: %s", type(exc).__name__, exc)
+            result = float("inf")
+        dt = time.perf_counter() - t0
+        _eval_count[0] += 1
+        _eval_t_accum[0] += dt
+        return result
 
     best_L = float("inf")
     best_theta = _theta_from_cfg(base_cfg, n_buffer_seg, resolved_bounds)
@@ -205,23 +222,57 @@ def solve_inner(
         opts["verbose"] = -9
         opts["seed"] = int(seed + restart)
 
+        log.info("NB=%d  restart %d/%d  starting  (x0 from %s)",
+                 n_buffer_seg, restart + 1, n_restarts,
+                 "cfg" if restart == 0 else "random")
+
         es = cma.CMAEvolutionStrategy(x0.tolist(), sigma0, opts)
         trace: list[float] = []
         restart_best = float("inf")
+        t_restart_start = time.perf_counter()
+        gen = 0
+
+        _eval_count[0] = 0
+        _eval_t_accum[0] = 0.0
 
         while not es.stop():
+            t_gen_start = time.perf_counter()
             solutions = es.ask()
             fitnesses = [objective(np.array(s)) for s in solutions]
             total_evals += len(solutions)
             es.tell(solutions, fitnesses)
 
+            gen += 1
             gen_best = float(min(fitnesses))
             restart_best = min(restart_best, gen_best)
             trace.append(restart_best)
 
+            t_gen = time.perf_counter() - t_gen_start
+            t_elapsed = time.perf_counter() - t_restart_start
+            avg_eval_t = _eval_t_accum[0] / max(_eval_count[0], 1)
+            gens_remaining = max_iter - gen
+            eta_s = gens_remaining * t_gen
+
+            log.info(
+                "NB=%d  restart %d/%d  gen %3d/%d  gen_best=%.4f  restart_best=%.4f"
+                "  t_gen=%.1fs  avg_eval=%.3fs  elapsed=%.0fs  eta≈%.0fs",
+                n_buffer_seg, restart + 1, n_restarts, gen, max_iter,
+                gen_best, restart_best,
+                t_gen, avg_eval_t, t_elapsed, eta_s,
+            )
+
         traces.append(np.array(trace))
 
         stop_reasons = es.stop()
+        t_restart = time.perf_counter() - t_restart_start
+        log.info(
+            "NB=%d  restart %d/%d  done  gens=%d  stop=%s  restart_best=%.4f"
+            "  evals=%d  elapsed=%.0fs",
+            n_buffer_seg, restart + 1, n_restarts,
+            gen, list(stop_reasons.keys()), restart_best,
+            _eval_count[0], t_restart,
+        )
+
         hit_tolerance = "tolfun" in stop_reasons or "tolx" in stop_reasons
         if hit_tolerance:
             converged = True
@@ -234,6 +285,10 @@ def solve_inner(
             best_theta = result_x
 
     # Evaluate best_theta to get full loss breakdown
+    log.info("NB=%d  all restarts done  total_evals=%d  best_L=%.4f  elapsed=%.0fs",
+             n_buffer_seg, total_evals, best_L,
+             time.perf_counter() - t_inner_start)
+
     best_cfg = _theta_to_cfg(best_theta, base_cfg, n_buffer_seg)
     try:
         final_lr = compute_loss(

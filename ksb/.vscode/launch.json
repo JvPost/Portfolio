@@ -35,6 +35,33 @@
             "cwd": "${workspaceFolder}"
         },
         {
+            "name": "run_optimizer (debug)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/run_optimize.py",
+            "args": [
+                "--N-min",
+                "5",
+                "--N-max",
+                "12",
+                "--popsize",
+                "8",
+                "--restarts",
+                "2",
+                "--n-seeds",
+                "2",
+                "--batch",
+                "20",
+                "--max-iter",
+                "40",
+                "--out",
+                "results/track_a_debug/"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": false
+        },
+        {
             "name": "Current File",
             "type": "debugpy",
             "request": "launch",
