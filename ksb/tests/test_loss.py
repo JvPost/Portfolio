@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ksb.optimization.loss import compute_loss, LossResult
 
-_CONFIG_DIR = Path(__file__).parent.parent / "configs"
+_CONFIG_DIR = Path(__file__).parent.parent / "configs" / "system"
 
 
 def _default_cfg() -> dict:
@@ -36,11 +36,10 @@ class TestComputeLoss:
         assert abs(lr.L - expected) < 1e-10, f"Loss doesn't match components: {lr.L} vs {expected}"
 
     def test_eta_r_from_cfg(self):
-        """eta_r == slot_rate_ppm / arrival_rate_ppm."""
+        """eta_r is read directly from cfg."""
         cfg = _default_cfg()
         lr = compute_loss(cfg, lambda_U=0.05, lambda_L=0.5, lambda_T=1.0, seeds=[42])
-        expected_eta_r = cfg["slot_rate_ppm"] / cfg["arrival_rate_ppm"]
-        assert abs(lr.eta_r - expected_eta_r) < 1e-10
+        assert abs(lr.eta_r - cfg["eta_r"]) < 1e-10
 
     def test_multiple_seeds_averages(self):
         """With multiple seeds, results are averaged and sentinel=False if all finite."""

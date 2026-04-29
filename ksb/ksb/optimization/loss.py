@@ -45,7 +45,7 @@ def compute_loss(
 
     j_max = float(cfg["jmax"])
     L_buffer = float(cfg.get("L_buffer", 2.0))
-    eta_r = float(cfg.get("slot_rate_ppm", 216.0)) / float(cfg.get("arrival_rate_ppm", 180.0))
+    eta_r = float(cfg.get("eta_r", 1.0))
 
     phi_accum = 0.0
     U_accum = 0.0

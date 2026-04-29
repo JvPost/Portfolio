@@ -15,7 +15,7 @@ from ksb.planning.solvers.quintic import QuinticSolver
 from ksb.planning.solvers.scurve import SCurveSolver
 from ksb.simulation.ksb_simulation import KSBSimulation
 
-_CONFIG_DIR = Path(__file__).parent / "configs"
+_CONFIG_DIR = Path(__file__).parent / "configs" / "system"
 
 
 def main():

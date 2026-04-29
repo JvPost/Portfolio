@@ -152,9 +152,12 @@ class KSBViewer:
         # gap_min matches KSBSimulation.min_gap_on_buffer
         self.gap_min = self.L_buf / self.n_buffer_seg * 2
 
-        slot_rate_ppm = float(cfg.get("slot_rate_ppm", 180))
-        slot_gap    = float(cfg.get("slot_length",    0.40))
-        self.vd          = (slot_rate_ppm / 60.0) * slot_gap
+        input_length     = float(cfg.get("input_length", 0.32))
+        arrival_rate_ppm = float(cfg.get("arrival_rate_ppm", 180))
+        eta_s = float(cfg.get("eta_s", 1.25))
+        eta_r = float(cfg.get("eta_r", 1.0))
+        slot_gap         = eta_s * input_length
+        self.vd          = (eta_r * arrival_rate_ppm / 60.0) * slot_gap
         self.slot_period = slot_gap / self.vd
 
         # ------------------------------------------------------------------

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -100,8 +101,8 @@ def _theta_to_cfg(theta: np.ndarray, base_cfg: dict, n_buffer_seg: int) -> dict:
     cfg["v_buff_out"]      = float(v_buff_out)
     cfg["a_u_max"]         = float(a_u_max)
     cfg["v_u_max"]         = float(v_u_max)
-    cfg["slot_length"]     = float(eta_s) * input_length
-    cfg["slot_rate_ppm"]   = float(eta_r) * arrival_rate_ppm
+    cfg["eta_s"] = float(eta_s)
+    cfg["eta_r"] = float(eta_r)
     cfg["j_u_max"]         = float(base_cfg.get("jmax", 100.0))   # shared bound
 
     return cfg
@@ -109,32 +110,15 @@ def _theta_to_cfg(theta: np.ndarray, base_cfg: dict, n_buffer_seg: int) -> dict:
 
 def _theta_from_cfg(base_cfg: dict, n_buffer_seg: int, bounds: dict) -> np.ndarray:
     """Extract a feasible initial point from base_cfg (or midpoint of bounds)."""
-    input_length = float(base_cfg.get("input_length", 0.32))
-    arrival_rate_ppm = float(base_cfg.get("arrival_rate_ppm", 180.0))
-
-    def _mid(key: str, fallback: float) -> float:
-        lo, hi = bounds[key]
-        if lo is None and hi is None:
-            return fallback
-        if lo is None:
-            return hi - 0.1
-        if hi is None:
-            return lo + 0.1
-        return (lo + hi) / 2.0
-
     L_buffer_raw = float(base_cfg.get("L_buffer", 3.0))
     lo_L, hi_L = bounds["L_buffer"]
     L_buffer_clamped = float(np.clip(L_buffer_raw, lo_L, hi_L))
 
-    slot_length = float(base_cfg.get("slot_length", 0.6))
-    eta_s_raw = slot_length / input_length
     lo_s, hi_s = bounds["eta_s"]
-    eta_s = float(np.clip(eta_s_raw, lo_s, hi_s))
+    eta_s = float(np.clip(base_cfg.get("eta_s", 1.5), lo_s, hi_s))
 
-    slot_rate_ppm = float(base_cfg.get("slot_rate_ppm", 216.0))
-    eta_r_raw = slot_rate_ppm / arrival_rate_ppm
     lo_r, hi_r = bounds["eta_r"]
-    eta_r = float(np.clip(eta_r_raw, lo_r, hi_r))
+    eta_r = float(np.clip(base_cfg.get("eta_r", 1.2), lo_r, hi_r))
 
     return np.array([
         L_buffer_clamped,
@@ -177,6 +161,7 @@ def solve_inner(
 
     _eval_count = [0]
     _eval_t_accum = [0.0]
+    _exc_counts: Counter = Counter()
 
     def objective(theta: np.ndarray) -> float:
         theta_clipped = np.clip(theta, lower, upper)
@@ -192,7 +177,9 @@ def solve_inner(
             )
             result = lr.L
         except Exception as exc:
-            log.debug("objective raised %s: %s", type(exc).__name__, exc)
+            exc_type = type(exc).__name__
+            _exc_counts[exc_type] += 1
+            log.warning("NB=%d  objective exception  %s: %s", n_buffer_seg, exc_type, exc)
             result = float("inf")
         dt = time.perf_counter() - t0
         _eval_count[0] += 1
@@ -288,6 +275,10 @@ def solve_inner(
     log.info("NB=%d  all restarts done  total_evals=%d  best_L=%.4f  elapsed=%.0fs",
              n_buffer_seg, total_evals, best_L,
              time.perf_counter() - t_inner_start)
+    if _exc_counts:
+        summary = "  ".join(f"{k}={v}" for k, v in sorted(_exc_counts.items()))
+        log.warning("NB=%d  exception summary: %s  (total=%d / %d evals)",
+                    n_buffer_seg, summary, sum(_exc_counts.values()), total_evals)
 
     best_cfg = _theta_to_cfg(best_theta, base_cfg, n_buffer_seg)
     try:
@@ -306,11 +297,6 @@ def solve_inner(
         )
 
     theta_star = {k: float(v) for k, v in zip(_THETA_KEYS, best_theta)}
-    # Reconstruct derived quantities for reporting
-    input_length = float(base_cfg.get("input_length", 0.32))
-    arrival_rate_ppm = float(base_cfg.get("arrival_rate_ppm", 180.0))
-    theta_star["slot_length"] = theta_star["eta_s"] * input_length
-    theta_star["slot_rate_ppm"] = theta_star["eta_r"] * arrival_rate_ppm
 
     return InnerResult(
         n_buffer_seg=n_buffer_seg,

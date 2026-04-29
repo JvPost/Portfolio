@@ -46,6 +46,8 @@ def compute_C_bb(events: SegmentEvents, j_max: float) -> BBCostResult:
 
     C = np.minimum(C_up_masked, C_down_masked)
 
+    assert not any(C == np.inf)
+
     up_wins = feasible_up & (C_up_masked <= C_down_masked)
     down_wins = feasible_down & ~up_wins
 

@@ -76,6 +76,15 @@ def main():
     out_dir = _RESULTS_DIR / run_tag
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # File handler — all log output (INFO + warnings) goes to optimize.log
+    log_path = out_dir / "optimize.log"
+    _file_handler = logging.FileHandler(log_path)
+    _file_handler.setLevel(logging.DEBUG)
+    _file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s  %(levelname)-5s  %(message)s", datefmt="%H:%M:%S"
+    ))
+    logging.getLogger().addHandler(_file_handler)
+
     # Snapshot the configs used for this run
     run_info = {
         "run_tag": run_tag,

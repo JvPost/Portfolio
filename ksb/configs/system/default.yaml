@@ -31,5 +31,5 @@ n_reg_seg: 1
 
 # downstream
 L_downstream: 2.0
-slot_length: 0.6
-slot_rate_ppm: 216
+eta_s: 1.875   # slot_length = eta_s * input_length
+eta_r: 1.2     # slot_rate   = eta_r * arrival_rate_ppm

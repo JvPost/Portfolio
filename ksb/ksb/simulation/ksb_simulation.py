@@ -45,17 +45,18 @@ class KSBSimulation:
         gamma = float(cfg.get("gamma", 0.0))
         self.Ls = utils.belt_lengths(self.n_buffer_seg, self.L_buffer, Lmin, beta, gamma)
 
-        self.slot_length = float(cfg.get("slot_length", 0.40))
+        eta_s = float(cfg.get("eta_s", 1.25))
+        self.slot_length = eta_s * self.input_length
         self.gap_mean = float(cfg.get("input_gap_mean", 0.80))
         self.gap_std = float(cfg.get("input_gap_std", 0.05))
 
         self.gap_min = 2 * self.L_buffer / self.n_buffer_seg
 
         arrival_rate_ppm = float(cfg.get("arrival_rate_ppm", 180))
-        slot_rate_ppm = float(cfg.get("slot_rate_ppm", 180))
+        eta_r = float(cfg.get("eta_r", 1.0))
 
         self.ru = arrival_rate_ppm / 60.0
-        self.rd = slot_rate_ppm / 60.0
+        self.rd = eta_r * self.ru
         assert self.rd >= self.ru, "slot rate must be >= arrival rate"
 
         self.vu = self.ru * self.gap_mean
