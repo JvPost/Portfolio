@@ -108,6 +108,16 @@ def _theta_to_cfg(theta: np.ndarray, base_cfg: dict, n_buffer_seg: int) -> dict:
     return cfg
 
 
+def _to_unit(x_phys: np.ndarray, lower: np.ndarray, upper: np.ndarray) -> np.ndarray:
+    """Map physical-unit theta to the unit cube [0, 1]^d."""
+    return (x_phys - lower) / (upper - lower)
+
+
+def _to_physical(x_unit: np.ndarray, lower: np.ndarray, upper: np.ndarray) -> np.ndarray:
+    """Map unit-cube point back to physical units."""
+    return lower + x_unit * (upper - lower)
+
+
 def _theta_from_cfg(base_cfg: dict, n_buffer_seg: int, bounds: dict) -> np.ndarray:
     """Extract a feasible initial point from base_cfg (or midpoint of bounds)."""
     L_buffer_raw = float(base_cfg.get("L_buffer", 3.0))
@@ -146,12 +156,19 @@ def solve_inner(
     n_seeds_loss: int = 4,
     seed: int = 0,
 ) -> InnerResult:
-    """CMA-ES on theta_c for fixed N^B. Multi-restart, returns best across restarts."""
+    """CMA-ES on theta_c for fixed N^B. Multi-restart, returns best across restarts.
+
+    Optimizes in the unit cube [0,1]^d with sigma0=0.25 (isotropic).  Physical-unit
+    bounds are used only to map to/from unit space; the optimizer sees [0,1] for
+    every coordinate.
+    """
     resolved_bounds = _build_bounds(n_buffer_seg, base_cfg, bounds)
 
     lower = np.array([resolved_bounds[k][0] for k in _THETA_KEYS])
     upper = np.array([resolved_bounds[k][1] for k in _THETA_KEYS])
-    sigma0 = float(np.mean((upper - lower) / 4.0))
+    sigma0 = 0.25   # one quarter of the unit-cube axis; isotropic by construction
+    unit_lo = [0.0] * len(_THETA_KEYS)
+    unit_hi = [1.0] * len(_THETA_KEYS)
 
     loss_seeds = list(range(n_seeds_loss))
 
@@ -163,9 +180,9 @@ def solve_inner(
     _eval_t_accum = [0.0]
     _exc_counts: Counter = Counter()
 
-    def objective(theta: np.ndarray) -> float:
-        theta_clipped = np.clip(theta, lower, upper)
-        cfg = _theta_to_cfg(theta_clipped, base_cfg, n_buffer_seg)
+    def objective(x_unit: np.ndarray) -> float:
+        theta = _to_physical(np.clip(x_unit, 0.0, 1.0), lower, upper)
+        cfg = _theta_to_cfg(theta, base_cfg, n_buffer_seg)
         t0 = time.perf_counter()
         try:
             lr = compute_loss(
@@ -188,7 +205,6 @@ def solve_inner(
 
     best_L = float("inf")
     best_theta = _theta_from_cfg(base_cfg, n_buffer_seg, resolved_bounds)
-    best_loss_result: LossResult | None = None
     converged = False
     total_evals = 0
     traces: list[np.ndarray] = []
@@ -196,12 +212,13 @@ def solve_inner(
     for restart in range(n_restarts):
         rng = np.random.RandomState(seed + restart)
         if restart == 0:
-            x0 = _theta_from_cfg(base_cfg, n_buffer_seg, resolved_bounds)
+            x0_phys = _theta_from_cfg(base_cfg, n_buffer_seg, resolved_bounds)
+            x0 = _to_unit(x0_phys, lower, upper)
         else:
-            x0 = rng.uniform(lower, upper)
+            x0 = rng.uniform(0.0, 1.0, size=len(_THETA_KEYS))
 
         opts = cma.CMAOptions()
-        opts["bounds"] = [lower.tolist(), upper.tolist()]
+        opts["bounds"] = [unit_lo, unit_hi]
         opts["popsize"] = popsize
         opts["maxiter"] = max_iter
         opts["tolfun"] = 1e-4
@@ -264,7 +281,8 @@ def solve_inner(
         if hit_tolerance:
             converged = True
 
-        result_x = np.clip(np.array(es.result.xbest), lower, upper)
+        best_unit = np.clip(np.array(es.result.xbest), 0.0, 1.0)
+        result_x = _to_physical(best_unit, lower, upper)
         result_L = float(es.result.fbest)
 
         if result_L < best_L:

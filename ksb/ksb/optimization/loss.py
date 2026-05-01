@@ -3,16 +3,22 @@
 Loss: L = sum(Phi) + lambda_U * sum(U) + lambda_L * L_buffer + lambda_T * eta_r
 where Phi = (max(0, C - W))^2 (infeasibility barrier) and U = max(0, S) (utilization prior).
 lambda_N * N_B is added at outer selection time, not here.
+
+Under the adaptive-jerk extension (Buffer minimum-time cost §6), C is finite everywhere,
+so sentinel fires only on genuine simulation crashes or missing segment_events.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import logging
+from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
 
 from ksb.analysis.cost import compute_Phi_bb, compute_S_bb
 from ksb.simulation.ksb_simulation import KSBSimulation
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -57,12 +63,15 @@ def compute_loss(
             result = KSBSimulation(cfg=cfg).run(seed=seed, skip_pair_records=True)
         except Exception as e:
             sentinel = True
+            log.warning("sentinel: simulation exception for seed=%d  %s: %s",
+                        seed, type(e).__name__, e)
             per_seed.append({"seed": seed, "error": str(e)})
             continue
 
         events = result.segment_events
         if events is None:
             sentinel = True
+            log.warning("sentinel: segment_events is None for seed=%d (batch < 2)", seed)
             per_seed.append({"seed": seed, "error": "segment_events is None (batch < 2)"})
             continue
 
@@ -75,6 +84,7 @@ def compute_loss(
 
         if not np.isfinite(phi_sum_seed):
             sentinel = True
+            log.warning("sentinel: non-finite Phi for seed=%d  phi_sum=%.6g", seed, phi_sum_seed)
 
         per_seed.append({
             "seed": seed,

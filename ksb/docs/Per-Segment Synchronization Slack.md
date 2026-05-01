@@ -45,7 +45,7 @@ Sign convention: superscript $-$ for the state *handed off from* input $i$; $+$ 
 
 ## 3. Budget, cost, slack
 
-Let $b$ be the batch size. Diagnostic matrices $\mathbf{W}, \mathbf{C}^{\mathcal{P}}, \mathbf{S}^{\mathcal{P}}$ all have shape $(b-1) \times N^B$.
+Let $b$ be the batch size. Diagnostic matrices $\mathbf{W}, \mathbf{C}^{\pi}, \mathbf{S}^{\pi}, \boldsymbol{\Delta j}^\pi$ all have shape $(b-1) \times N^B$.
 
 ### 3.1 Budget $\mathbf{W}$
 
@@ -59,52 +59,59 @@ Units: seconds. Determined entirely by the committed input trajectories — a pr
 
 Monotonicity worth keeping in mind: holding the schedule fixed, shrinking $L^B_k$ monotonically increases $W_{i,k}$. (Shorter segment ⟹ leader clears its exit sooner; follower entry time unchanged.) The strict guarantee $W_{i,k} > 0$ requires pitch-minus-length $> L^B_k$, where pitch is the center-to-center input spacing — so the gap between consecutive inputs must exceed the segment length. Shrinking $L^B_k$ pushes toward this guarantee from the wrong direction; only when $L^B_k$ drops below the minimum inter-input gap is positivity structural.
 
-### 3.2 Cost function $C^{\mathcal{P}}$
+We denote the per-segment **policy** — the algorithm for computing kinematic transitions under motor constraints — as $\pi$. Specific policy instances include $\pi_3$ (cubic-in-velocity) and $\pi_{\text{BB}}$ (bang-bang jerk).
 
-Given the endpoint kinematic states, the **minimum transition time** under primitive $\mathcal{P}$ and the free-window motor envelope $(v^F_{\max}, a^F_{\max}, j^F_{\max})$ is an analytical function of the four boundary conditions:
+### 3.2 Cost function $C^{\pi}$
+
+Given the endpoint kinematic states, the **minimum transition time** under policy $\pi$ and the free-window motor envelope $(v^F_{\max}, a^F_{\max}, j^F_{\max})$ is an analytical function of the four boundary conditions:
 
 $$
-C^{\mathcal{P}}_{\min}\bigl(v^-, a^-, v^+, a^+\bigr) \;=\; \tau^\star_{\mathcal{P}}\!\bigl(v^-, a^-, v^+, a^+\bigr).
+C^{\pi}_{\min}\bigl(v^-, a^-, v^+, a^+\bigr) \;=\; \tau^\star_{\pi}\!\bigl(v^-, a^-, v^+, a^+\bigr).
 $$
 
 Evaluated pointwise per $(i, k)$:
 
 $$
-C^{\mathcal{P}}_{i,k} \;=\; C^{\mathcal{P}}_{\min}\bigl(v^-_{i,k},\, a^-_{i,k},\, v^+_{i,k},\, a^+_{i,k}\bigr).
+C^{\pi}_{i,k} \;=\; C^{\pi}_{\min}\bigl(v^-_{i,k},\, a^-_{i,k},\, v^+_{i,k},\, a^+_{i,k}\bigr).
 $$
 
 The matrix is storage for debugging and visualization; the underlying object is the function. Its derivation is the subject of [[Buffer minimum-time cost]].
 
-Units: seconds. A property of the *primitive* and the *free-window motor envelope*, independent of input-trajectory timing.
+Units: seconds. A property of the *policy* and the *free-window motor envelope*, independent of input-trajectory timing.
 
-Two primitives of interest:
+Two policy instances of interest:
 
-| Primitive | Symbol | Notes |
-|---|---|---|
-| Cubic-in-velocity | $\mathcal{P}_3$ | Uniquely determined by 4 BCs; linear jerk; preferred (gentler on motors) |
-| Bang-bang jerk | $\mathcal{P}_{\text{BB}}$ | Time-optimal lower bound; piecewise-closed form |
+| Policy            | Symbol            | Notes                                                                    |
+| ----------------- | ----------------- | ------------------------------------------------------------------------ |
+| Cubic-in-velocity | $\pi_3$           | Uniquely determined by 4 BCs; linear jerk; preferred (gentler on motors) |
+| Bang-bang jerk    | $\pi_{\text{BB}}$ | Time-optimal lower bound; piecewise-closed form                          |
 
-By optimality of bang-bang: $C^{\mathcal{P}_{\text{BB}}}_{i,k} \le C^{\mathcal{P}_3}_{i,k}$ for all $(i,k)$.
+By optimality of bang-bang: $C^{\pi_{\text{BB}}}_{i,k} \le C^{\pi_3}_{i,k}$ for all $(i,k)$.
+
+For $\pi = \pi_{\text{BB}}$ the policy is taken in its **adaptive jerk** variant ([[Buffer minimum-time cost]] §6): the closed form is evaluated at $\tilde{j} = \max(j^B_\max, j_\text{req})$ rather than at $j^B_\max$ directly. Consequence: $C^{\pi_\text{BB}}$ is a total function, finite on all $(v^-, a^-, v^+, a^+)$, with no primitive-existence sentinel. The deviation $\tilde{j} - j^B_\max$ is recorded separately as a post-hoc diagnostic (§3.5).
 
 ### 3.3 Slack $\mathbf{S}$ — diagnostic
 
 Element-wise difference:
 
 $$
-S^{\mathcal{P}}_{i,k} \;=\; W_{i,k} - C^{\mathcal{P}}_{i,k}.
+S^{\pi}_{i,k} \;=\; W_{i,k} - C^{\pi}_{i,k}.
 $$
 
-| Value                       | Meaning                                                                                                               |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| $S^{\mathcal{P}}_{i,k} > 0$ | Segment $k$ completes the transition with margin                                                                      |
-| $S^{\mathcal{P}}_{i,k} = 0$ | Transition saturates the free window                                                                                  |
-| $S^{\mathcal{P}}_{i,k} < 0$ | The primitive fits in principle but exceeds $W_{i,k}$ — no trajectory under $\mathcal{P}$ fits in $\mathcal{W}_{i,k}$ |
+| Value               | Meaning                                                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------------------------- |
+| $S^{\pi}_{i,k} > 0$ | Segment $k$ completes the transition with margin                                                           |
+| $S^{\pi}_{i,k} = 0$ | Transition saturates the free window                                                                       |
+| $S^{\pi}_{i,k} < 0$ | The policy fits in principle but exceeds $W_{i,k}$ — no trajectory under $\pi$ fits in $\mathcal{W}_{i,k}$ |
 
-The ordering $C^{\text{BB}} \le C^{\mathcal{P}_3}$ induces $S^{\mathcal{P}_{\text{BB}}} \ge S^{\mathcal{P}_3}$ element-wise, so bang-bang slack is a feasibility *ceiling* and cubic slack a *floor*. Cells with $S^{\mathcal{P}_3}_{i,k} < 0 \le S^{\mathcal{P}_{\text{BB}}}_{i,k}$ are precisely where the design must fall back from cubic to bang-bang.
+The ordering $C^{\pi_{\text{BB}}} \le C^{\pi_3}$ induces $S^{\pi_{\text{BB}}} \ge S^{\pi_3}$ element-wise, so bang-bang slack is a feasibility *ceiling* and cubic slack a *floor*. Cells with $S^{\pi_3}_{i,k} < 0 \le S^{\pi_{\text{BB}}}_{i,k}$ are precisely where the design must fall back from cubic to bang-bang.
 
-**Envelope-sentinel regime.** Primitives may additionally be undefined on cells where the required $(v^-, a^-, v^+, a^+)$ violates the simplifying assumptions of the closed form — e.g. the jerk-only bang-bang derivation assumes $|a_p| \le a^B_\max$ and $|v| \le v^B_\max$ along the profile ([[Buffer minimum-time cost]] §5.4–§5.5). When an implementation encounters such a cell it returns $C^{\mathcal{P}}_{i,k} = +\infty$, yielding $S^{\mathcal{P}}_{i,k} = -\infty$. This is a *sentinel* distinct from the ordinary $S < 0$ case: ordinary $S < 0$ means the primitive's closed form is valid but its minimum time exceeds the budget, while $S = -\infty$ means the primitive's closed form is itself invalid for these BCs and a richer primitive (a- or v-saturated extension) is required. Within the intended KSB operating range the sentinel regime should be empty; its occurrence is diagnostic, not nominal.
+**Sentinel regime.** Under $\pi_\text{BB}$ in its adaptive-jerk form (§3.2), $C^{\pi_\text{BB}}$ is finite by construction and there is no primitive-existence sentinel. Sentinels under $\pi_\text{BB}$ remain only for the *envelope* regimes — the closed form's $|a_p| \le a^B_\max$ and $|v| \le v^B_\max$ assumptions ([[Buffer minimum-time cost]] §5.4–§5.5). When violated, the closed form is no longer self-consistent and a richer policy (3-phase a-saturated, 7-phase v-saturated) is required; the implementation flags such cells and they are reported but not silently penalized. Within the intended KSB operating range these envelope sentinels should be empty; their occurrence is diagnostic, not nominal.
+
+For $\pi_3$, sentinel handling depends on its own envelope conditions and is treated separately.
 
 $\mathbf{S}$ is a diagnostic object. The scalar used to drive design optimization is defined in §4.
+
 ### 3.4 Boundary asymmetry
 
 Not all boundaries are equal. At a generic *interior* boundary $k \in \{1, \ldots, N^B - 1\}$, both the leader-hand-off state and the neighbouring follower-demand state are shaped by the buffer's own planning; upstream noise has been partially absorbed, registrar demands haven't yet arrived. The buffer has authority over both endpoints.
@@ -118,9 +125,23 @@ Consequently the first and last segments ($k = 1$ and $k = N^B$) each have one e
 
 The segment-length parametrization in §5 is the mechanism through which the optimizer responds to this asymmetry.
 
+### 3.5 Adaptive jerk diagnostic $\boldsymbol{\Delta j}^\pi$
+
+For $\pi = \pi_\text{BB}$, the per-cell jerk overspec
+
+$$
+\Delta j^\pi_{i,k} \;:=\; \max\bigl\{0,\; j_\text{req}(v^-_{i,k}, a^-_{i,k}, v^+_{i,k}, a^+_{i,k}) - j^B_\max\bigr\}
+$$
+
+records by how much the jerk bound would need to be raised to render cell $(i,k)$'s primitive feasible at the nominal $j^B_\max$ ([[Buffer minimum-time cost]] §6.3). Units: m/s³.
+
+$\boldsymbol{\Delta j}^\pi$ is **not an optimization signal**: $j^B_\max$ is a fixed motor-spec parameter, not a design variable, so penalizing $\Delta j$ separately would add no gradient direction the slack pressure on $\boldsymbol{\theta}_c$ does not already supply. It is purely a *post-hoc readout*: cells with $\Delta j > 0$ at the optimum identify transitions that the actuator could not have executed at nominal jerk; sums and maxima across the cell grid quantify the jerk overspec a robustness-minded motor redesign would need.
+
+For $\pi = \pi_3$ the construction is not directly applicable; cubic-in-velocity has no analogous single-knob feasibility extension.
+
 ## 4. Design objective
 
-Let $\boldsymbol{\theta}$ collect the design variables: the continuous set $\{L^B, \beta, \gamma, \boldsymbol{\theta}_{\text{upstream}}\}$ plus the integer $N^B$. ($\boldsymbol{\theta}_{\text{upstream}}$ is deferred to separate formalization; for the purposes of this document it is an exogenous producer of the endpoint states in §2.)
+Let $\boldsymbol{\theta}$ collect the design variables: the continuous set $\{L^B, \beta, \gamma, \boldsymbol{\theta}_{\text{upstream}}\}$ plus the integer $N^B$. ($\boldsymbol{\theta}_{\text{upstream}}$ is deferred to separate formalization; for the purposes of this document it is an exogenous producer of the endpoint states in §2.) A chosen policy instance $\pi \in \{\pi_3, \pi_{\text{BB}}\}$ is fixed for the optimization run.
 
 The scalar driving optimization is a sum of four terms — one likelihood-like (physical feasibility) and three prior-like (preferences on tightness and structural complexity). Under a MAP reading: $\Phi$ plays the role of negative log-likelihood; the remaining three are log-priors on the design.
 
@@ -129,20 +150,21 @@ The scalar driving optimization is a sum of four terms — one likelihood-like (
 Per-cell quadratic hinge on infeasibility:
 
 $$
-\Phi^{\mathcal{P}}_{i,k} \;=\; \bigl(\max\{0,\, -S^{\mathcal{P}}_{i,k}\}\bigr)^{\!2} \;=\; \bigl(\max\{0,\, C^{\mathcal{P}}_{i,k} - W_{i,k}\}\bigr)^{\!2}.
+\Phi^{\pi}_{i,k} \;=\; \bigl(\max\{0,\, -S^{\pi}_{i,k}\}\bigr)^{\!2} \;=\; \bigl(\max\{0,\, C^{\pi}_{i,k} - W_{i,k}\}\bigr)^{\!2}.
 $$
 
 Units: seconds². Properties:
 - $C^1$ smooth everywhere, including the kink at $S = 0$.
-- Well-defined for all $W \in \mathbb{R}$, including $W = 0$ and $W < 0$ (overlap regime). Overlap simply produces a larger $C - W$ and a larger penalty — no special case, no NaN, no $\infty$.
-- Gradient $\partial \Phi / \partial W = -2\,(C - W)$ when infeasible, zero when feasible. Pushes $W$ up where it matters, silent where it doesn't.
+- Well-defined for all $W \in \mathbb{R}$, including $W = 0$ and $W < 0$ (overlap regime). Overlap simply produces a larger $C^{\pi} - W$ and a larger penalty — no special case, no NaN, no $\infty$.
+- Under $\pi_\text{BB}$ in its adaptive-jerk form, $C^\pi$ is finite by §3.2, so $\Phi^\pi$ is finite by construction. The previous sentinel branch on primitive non-existence is structurally empty.
+- Gradient $\partial \Phi^{\pi} / \partial W = -2\,(C^{\pi} - W)$ when infeasible, zero when feasible. Pushes $W$ up where it matters, silent where it doesn't.
 
 ### 4.2 Utilization prior $U$
 
 Per-cell linear hinge on positive slack:
 
 $$
-U^{\mathcal{P}}_{i,k} \;=\; \max\{0,\, S^{\mathcal{P}}_{i,k}\}.
+U^{\pi}_{i,k} \;=\; \max\{0,\, S^{\pi}_{i,k}\}.
 $$
 
 Units: seconds. Properties:
@@ -160,29 +182,30 @@ $$
 R_L(L^B) \;=\; \lambda_L\, L^B, \qquad R_N(N^B) \;=\; \lambda_N\, N^B.
 $$
 
-- **$R_L$** complements the slack pressure on $L^B$ with a realization-blind flat gradient; prevents the optimizer from sizing against the tail of a single stochastic realization.
+- **$R_L$** complements the slack pressure on $L^B$ with a realization-blind flat gradient; prevents the optimizer from sizing the buffer against the tail of a single stochastic realization.
 - **$R_N$** is constant within a fixed-$N^B$ inner problem (no gradient role), but discriminates across outer-sweep points (§6).
 - Linear penalties align with physical hardware cost — "cost per meter," "cost per segment" — rather than an unjustified quadratic curvature.
 
 ### 4.4 Aggregate objective
 
 $$
-\mathcal{L}(\boldsymbol{\theta}) \;=\; \underbrace{\sum_{i,k} \Phi^{\mathcal{P}}_{i,k}}_{\text{feasibility (NLL)}} \;+\; \lambda_U \underbrace{\sum_{i,k} U^{\mathcal{P}}_{i,k}}_{\text{utilization prior}} \;+\; \underbrace{\lambda_L\, L^B}_{\text{size prior}} \;+\; \underbrace{\lambda_N\, N^B}_{\text{complexity prior}}.
+\mathcal{L}(\boldsymbol{\theta}) \;=\; \underbrace{\sum_{i,k} \Phi^{\pi}_{i,k}}_{\text{feasibility (NLL)}} \;+\; \lambda_U \underbrace{\sum_{i,k} U^{\pi}_{i,k}}_{\text{utilization prior}} \;+\; \underbrace{\lambda_L\, L^B}_{\text{size prior}} \;+\; \underbrace{\lambda_N\, N^B}_{\text{complexity prior}}.
 $$
 
 The three weights are exchange rates between terms with unequal units, so each has its own dimension:
 
-| Weight | Units | Reads as |
-|---|---|---|
-| $\lambda_U$ | s | "how many s² of infeasibility is 1 s of slack worth?" |
-| $\lambda_L$ | s²/m | "how many s² of infeasibility is 1 m of buffer worth?" |
-| $\lambda_N$ | s² | "how many s² of infeasibility is 1 segment worth?" |
+| Weight      | Units | Reads as                                               |
+| ----------- | ----- | ------------------------------------------------------ |
+| $\lambda_U$ | s     | "how many s² of infeasibility is 1 s of slack worth?"  |
+| $\lambda_L$ | s²/m  | "how many s² of infeasibility is 1 m of buffer worth?" |
+| $\lambda_N$ | s²    | "how many s² of infeasibility is 1 segment worth?"     |
 
 They should be calibrated rather than guessed, either by physical reasoning or by Pareto-style sweeping.
 
 Which components of $\nabla_{\boldsymbol{\theta}} \mathcal{L}$ are nonzero depends on what is placed in the continuous part of $\boldsymbol{\theta}$; the objective does not itself decide whether the response to infeasibility is "grow $L^B$" or "redistribute via $\beta, \gamma$" — the chain rule does.
 
-**Sentinel handling.** If any $\Phi^{\mathcal{P}}_{i,k} = +\infty$ (i.e. the primitive's closed form is undefined on that cell; §3.3), $\mathcal{L}$ is also $+\infty$ and gradient-based optimization is not meaningful. The optimizer treats such configurations as out-of-bounds and relies on the outer structure (e.g. barrier from the box constraint $L^B \ge N^B L^B_\min$, or outer sweep over $N^B$) to recover. Sentinel cells at the *optimum* indicate the primitive is wrong for the operating regime — switch to a richer primitive.
+**Sentinel handling.** Under $\pi_\text{BB}$ in its adaptive-jerk form, $\Phi^\pi$ is finite-valued by construction (§4.1) and $\mathcal{L}$ has no $+\infty$ branch from primitive non-existence. The remaining sentinel sources are the envelope regimes (§3.3) — peak-acceleration and peak-velocity violations of the closed-form's self-consistency assumptions. Cells in envelope-sentinel regions should be flagged in the optimizer trace; if they persist at the optimum, the policy's closed form is wrong for the operating regime and a richer extension (a-saturated, v-saturated) is needed.
+
 ## 5. Segment-length parametrization
 
 The segment-length vector $\{L^B_k\}_{k=1}^{N^B}$ is parametrized by two scalars $(\beta, \gamma)$ via a log-quadratic softmax over centered, normalized indices:
@@ -210,33 +233,7 @@ Properties and signs:
 - Box constraint on $L^B$: $L^B \ge N^B L^B_\min$.
 - Smooth in $(\beta, \gamma)$, so slack-term gradients propagate cleanly into segment-length redistribution.
 
-**Predicted direction of optimization.** §3.4 argued that edge segments run hot. The response that relieves them is to make edge segments *shorter* (smaller $L^B_1, L^B_{N^B}$ ⟹ larger $W_{i,1}, W_{i,N^B}$ by §3.1 monotonicity ⟹ more room against $C$). That is $\gamma < 0$, middle-heavy. The pitch-related intuition goes the same way: inputs accelerate through the middle of the buffer, opening inter-input spacing there; longer middle segments are therefore affordable whereas longer edge segments are not. So the optimizer is expected to settle at $\gamma^\star < 0$ for realistic problems. A consistent finding of $\gamma^\star > 0$ would indicate a mis-modeled envelope or an upstream controller failing to deliver the assumed infeed statistics.
-
-Reference implementation:
-
-```python
-def belt_lengths(
-    N: int,
-    L_total: float,
-    L_min: float,
-    beta: float = 0.0,
-    gamma: float = 0.0,
-) -> np.ndarray:
-    """Generate N belt lengths summing to L_total, each >= L_min.
-    Shaped by a log-quadratic softmax over centered, normalized indices.
-    """
-    if L_total < N * L_min:
-        raise ValueError("Infeasible: L_total < N * L_min")
-    R = L_total - N * L_min
-    # centered, normalized indices: ~[-1, 1] for N >= 2
-    k = (np.arange(1, N + 1) - (N + 1) / 2.0) / max((N - 1) / 2.0, 1.0)
-    w = np.exp(beta * k + gamma * (k ** 2))
-    w_sum = w.sum()
-    if not np.isfinite(w_sum) or w_sum <= 0:
-        raise ValueError("Numerical issue: weights collapsed.")
-    p = w / w_sum
-    return L_min + R * p
-```
+**Predicted direction of optimization.** §3.4 argued that edge segments run hot. The response that relieves them is to make edge segments *shorter* (smaller $L^B_1, L^B_{N^B}$ ⟹ larger $W_{i,1}, W_{i,N^B}$ by §3.1 monotonicity ⟹ more room against $C^{\pi}$). That is $\gamma < 0$, middle-heavy. The pitch-related intuition goes the same way: inputs accelerate through the middle of the buffer, opening inter-input spacing there; longer middle segments are therefore affordable whereas longer edge segments are not. So the optimizer is expected to settle at $\gamma^\star < 0$ for realistic problems. A consistent finding of $\gamma^\star > 0$ would indicate a mis-modeled envelope or an upstream controller failing to deliver the assumed infeed statistics.
 
 ## 6. Optimization structure
 
@@ -260,4 +257,4 @@ The $\lambda_N N^B$ term has no role inside the inner loop — it is a constant 
 
 - **Gap violation** $\mathbf{1}[\min_t g_i(t) < g_{\min}]$ — proxy observable. Binary, whole-buffer, post-hoc. Superseded by $\mathbf{S}$ (diagnostic) and $\Phi$ (optimization signal).
 - **Whole-buffer pair window** — recovered as the $N^B = 1$ collapse: $W_{i,1}$ with $k=1$ spanning the entire buffer equals the whole-buffer pair-window width used in earlier diagnostics.
-- **Hard feasibility** of a plan under primitive $\mathcal{P}$: $\Phi^{\mathcal{P}}_{i,k} = 0$ for all $(i,k)$, equivalently $S^{\mathcal{P}}_{i,k} \ge 0$ for all $(i,k)$.
+- **Hard feasibility** of a plan under policy $\pi$: $\Phi^{\pi}_{i,k} = 0$ for all $(i,k)$, equivalently $S^{\pi}_{i,k} \ge 0$ for all $(i,k)$.
