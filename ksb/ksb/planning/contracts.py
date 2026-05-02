@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, List
@@ -39,6 +40,7 @@ class SlotAssignmentError(PlannerError):
 class Policy:
     """Planner policy knobs."""
     input_length: float = 0.32
+    v_min: float = 0.0   # planner-imposed lower bound on velocity (m/s)
 
 
 # ---------- Solver protocol ----------
@@ -49,3 +51,12 @@ class IProfileSolver(ABC):
     """
     def solve(self, pi, vi, pf, vf, T, bounds, policy):
         ...
+
+    def feasibility_window(self, pi, vi, pf, vf, bounds, policy) -> tuple[float, float]:
+        """Return (T_min, T_max) such that solve(..., T, ...) is feasible for T in this range.
+
+        Default implementation returns (0.0, math.inf), meaning the solver has no
+        closed-form window and callers should fall back to iterative search.
+        Solvers with a tractable window (e.g. SCurveSolver) may override.
+        """
+        return (0.0, math.inf)

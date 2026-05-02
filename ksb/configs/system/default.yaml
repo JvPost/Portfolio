@@ -16,12 +16,13 @@ jmax: 100.0
 Vmax: 3.0
 Amax: 8.5
 
-solver: quintic
-# solver: scurve
+# solver: quintic
+solver: scurve
 L_buffer: 3
 n_buffer_seg: 6
 eta_v: 1.16 # kinematic headroom: v^{BR} = eta_v * v_d
 
+v_min: 0.0 # planner-imposed velocity floor (m/s); 0 means no floor
 start_margin: 1 # the fraction of the input length, that must be on the buffer, before buffer control may commence.
 end_margin: 0.0
 

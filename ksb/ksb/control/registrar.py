@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from typing import List
 
@@ -15,6 +14,7 @@ from ksb.motion.trajectories import (
     A,
 )
 from ksb.planning.contracts import InfeasibleError
+from ksb.planning.ramp import ramp
 
 _MIN_DURATION = 1e-9
 
@@ -108,58 +108,22 @@ class RegistrarProfile:
     def _build_decel_segments(self) -> tuple[float, float, List[TrajectoryProfile]]:
         """Compute the 3-phase jerk-limited deceleration from v_in to v_out.
 
-        Uses the same ramp kinematics as SCurveSolver._ramp(), so the math
-        is guaranteed consistent with the buffer solver.
-
-        Returns
-        -------
-        T_active : float
-            Total duration of the active deceleration phase.
-        dp_active : float
-            Displacement consumed during deceleration.
-        segments : list of TrajectoryProfile
-            ConstantJerkTrajectory segments (1–3) representing the deceleration.
+        Uses the shared `ramp` primitive (ksb.planning.ramp), so the math is
+        structurally consistent with any other consumer of the same primitive.
         """
-        dv = self.v_in - self.v_out
-        dv_ramp_full = self.a_max ** 2 / self.j_max  # dv where a_max is just reached
-
-        if dv < 1e-12:
+        rk = ramp(self.v_in, self.v_out, self.j_max, self.a_max)
+        if rk.sign == 0.0:
             return 0.0, 0.0, []
 
-        use_a = dv >= dv_ramp_full - 1e-9  # trapezoidal — a_max binds
-        if use_a:
-            T1 = self.a_max / self.j_max
-            dv_in_T1 = self.a_max * T1          # = a_max² / j_max = dv_ramp_full
-            T2 = (dv - dv_in_T1) / self.a_max
-            T3 = T1
-        else:
-            T1 = math.sqrt(dv / self.j_max)
-            T2 = 0.0
-            T3 = T1
+        T1, T2, T3 = rk.T1, rk.T2, rk.T3
+        j1 = rk.sign * self.j_max
+        j3 = -rk.sign * self.j_max
 
-        # Deceleration: jerk = -j_max (phase 1), 0 (phase 2), +j_max (phase 3)
-        # Mirrors SCurveSolver._ramp with sign = -1 (v_b < v_a).
-        j1 = -self.j_max
-        j3 = +self.j_max
-
-        # Intermediate state after phase 1
+        # Intermediate states for segment construction
         v1 = self.v_in + 0.5 * j1 * T1 ** 2
-        a1 = j1 * T1                            # negative; = -a_max if trapezoidal
-
-        # Displacement accumulators (matching _ramp formula exactly)
-        x1 = self.v_in * T1 + (1.0 / 6.0) * j1 * T1 ** 3
-
-        # Intermediate state after phase 2
+        a1 = j1 * T1
         v2 = v1 + a1 * T2
-        x2 = v1 * T2 + 0.5 * a1 * T2 ** 2
 
-        # Displacement in phase 3
-        x3 = v2 * T3 + 0.5 * a1 * T3 ** 2 + (1.0 / 6.0) * j3 * T3 ** 3
-
-        T_active = T1 + T2 + T3
-        dp_active = x1 + x2 + x3
-
-        # Build ConstantJerkTrajectory segments (skip zero-duration phases)
         segments: List[TrajectoryProfile] = []
         if T1 > _MIN_DURATION:
             segments.append(ConstantJerkTrajectory(
@@ -180,4 +144,4 @@ class RegistrarProfile:
                 jerk=j3,
             ))
 
-        return T_active, dp_active, segments
+        return rk.total_time, rk.displacement, segments

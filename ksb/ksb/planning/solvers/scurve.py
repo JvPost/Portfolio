@@ -1,3 +1,17 @@
+"""S-curve solver: 7-phase jerk-limited fixed-time trajectory.
+
+Profile family: vi → v_m → vf via two jerk-limited ramps and a cruise phase.
+The cruise velocity v_m can be above both endpoints (peak), below both (dip),
+or between them (monotone) — all share one code path because the ramp signs
+are derived from (v_a, v_b), not hard-coded.
+
+Bisection over v_m ∈ [v_min, V_max] finds the unique root of:
+    f(v_m) = ramp_in.displacement + v_m * T_cruise + ramp_out.displacement - Xf = 0
+
+f is monotone-increasing in v_m over the full range: larger v_m → more
+displacement at fixed T (whether the profile dips or peaks). A single
+bisection therefore covers every case.
+"""
 from __future__ import annotations
 
 import math
@@ -7,199 +21,224 @@ import numpy as np
 
 from ksb.motion.trajectories import CompositeTrajectory, ConstantJerkTrajectory, V, A
 from ksb.planning.contracts import IProfileSolver, InfeasibleError, J_MAX, A_MAX, V_MAX
+from ksb.planning.ramp import ramp
 
 
 @dataclass(frozen=True)
 class SCurveSolver(IProfileSolver):
-    """
-    7-phase jerk-limited S-curve solver — fixed-time, analytical + scalar bisection.
+    """7-phase jerk-limited S-curve solver — fixed-time, analytical + bisection.
 
-    Profile shape: vi → v_peak → vf
-
-    The 7 phases:
-        1: jerk = +j_sign * j_max   (acc ramp, direction toward v_peak)
-        2: jerk = 0                 (constant accel, may be zero-duration)
-        3: jerk = -j_sign * j_max   (acc ramp down to zero)
-        4: jerk = 0                 (coast at v_peak, may be zero-duration)
-        5: jerk = -j_sign2 * j_max  (decel ramp, direction toward vf)
-        6: jerk = 0                 (constant decel, may be zero-duration)
-        7: jerk = +j_sign2 * j_max  (decel ramp down to zero)
-
-    Strategy (fixed-time):
-        Given (vi, vf, pf, T_m), find v_peak in [min(vi,vf), v_max] such that:
-            X_acc(vi, v_peak) + v_peak * T_cruise + X_dec(v_peak, vf) = pf
-            T_acc + T_cruise + T_dec = T_m
-        f(v_peak) = X_acc + X_dec + v_peak*(T_m - T_acc - T_dec) - pf = 0
-        Single bisection finds the root (f is monotone in v_peak).
+    Uses the shared `ramp` primitive for each half of the profile so that
+    dip-shaped profiles (v_m < min(vi, vf)) are handled identically to
+    peak-shaped ones.  Exposes `feasibility_window` so callers can bound
+    the search before invoking `solve`.
     """
 
     min_duration: float = 1e-9
 
+    # ------------------------------------------------------------------
+    # Feasibility window
+    # ------------------------------------------------------------------
+
+    def feasibility_window(
+        self, pi, vi, pf, vf, bounds, policy
+    ) -> tuple[float, float]:
+        """Return (T_min, T_max) for which solve(..., T, ...) is feasible.
+
+        T_min: time-optimal — cruise at V_max.
+        T_max: time-permissive — cruise at v_min (inf when v_min == 0).
+
+        If the geometry is infeasible at any T (e.g. Xf < 0), returns
+        (math.inf, 0.0) as a sentinel (T_min > T_max signals infeasibility).
+        """
+        j_max = bounds[J_MAX]
+        a_max = bounds[A_MAX]
+        v_max = bounds[V_MAX]
+        v_min = policy.v_min
+        Xf = pf - pi
+
+        if Xf < 0 or vi < 0 or vf < 0:
+            return (math.inf, 0.0)
+
+        T_min = self._t_min(vi, vf, Xf, j_max, a_max, v_max, v_min)
+        T_max = self._t_max(vi, vf, Xf, j_max, a_max, v_min)
+        return (T_min, T_max)
+
+    # ------------------------------------------------------------------
+    # Primary interface
+    # ------------------------------------------------------------------
+
     def solve(self, pi, vi, pf, vf, T, bounds, policy) -> CompositeTrajectory:
-        # pi is the starting position; the polynomial is expressed relative to pi=0
-        assert pi < pf, "Cannot be negative position delta"
-        
-        Xf = pf - pi  # total displacement to cover (pi assumed 0)
-        T_m = T
+        Xf = pf - pi
 
         j_max = bounds[J_MAX]
         a_max = bounds[A_MAX]
         v_max = bounds[V_MAX]
+        v_min = policy.v_min
 
-        if T_m <= 0:
-            raise InfeasibleError("T_m must be > 0")
+        if T <= 0:
+            raise InfeasibleError("T must be > 0")
         if Xf < 0:
-            raise InfeasibleError("pf must be >= 0")
+            raise InfeasibleError("pf must be >= pi")
         if vi < 0 or vf < 0:
             raise InfeasibleError("vi and vf must be >= 0")
         if vi > v_max + 1e-9 or vf > v_max + 1e-9:
             raise InfeasibleError("Initial or final velocity exceeds V_max")
 
-        dv_ramp_full = (a_max ** 2) / j_max  # dv covered by two jerk ramps at a_max
+        T_min = self._t_min(vi, vf, Xf, j_max, a_max, v_max, v_min)
+        T_max = self._t_max(vi, vf, Xf, j_max, a_max, v_min)
 
-        def _ramp(v_a: float, v_b: float) -> tuple[float, float]:
-            """Time and displacement for velocity transition v_a → v_b."""
-            dv = abs(v_b - v_a)
-            sign = 1.0 if v_b >= v_a else -1.0
-            if dv < 1e-12:
-                return 0.0, 0.0
-            use_a = dv >= dv_ramp_full - 1e-9
-            if use_a:
-                T1 = a_max / j_max
-                dv_in = a_max * T1
-                T2 = (dv - dv_in) / a_max
-                T3 = T1
-            else:
-                T1 = math.sqrt(dv / j_max)
-                T2 = 0.0
-                T3 = T1
-            j1 = sign * j_max
-            x1 = v_a * T1 + (1.0 / 6.0) * j1 * T1 ** 3
-            v1 = v_a + 0.5 * j1 * T1 ** 2
-            a1 = j1 * T1
-            x2 = v1 * T2 + 0.5 * a1 * T2 ** 2
-            v2 = v1 + a1 * T2
-            j3 = -sign * j_max
-            x3 = v2 * T3 + 0.5 * a1 * T3 ** 2 + (1.0 / 6.0) * j3 * T3 ** 3
-            return T1 + T2 + T3, x1 + x2 + x3
-
-        def _f(vp: float) -> tuple[float, float]:
-            """Displacement residual and T_cruise for a given v_peak."""
-            Ta, Xa = _ramp(vi, vp)
-            Td, Xd = _ramp(vp, vf)
-            T_cruise = T_m - Ta - Td
-            return Xa + vp * T_cruise + Xd - Xf, T_cruise
-
-        # ------------------------------------------------------------------
-        # T_min: time-optimal profile
-        # ------------------------------------------------------------------
-        Ta_vm, Xa_vm = _ramp(vi, v_max)
-        Td_vm, Xd_vm = _ramp(v_max, vf)
-        X_no_cruise = Xa_vm + Xd_vm
-
-        if X_no_cruise <= Xf + 1e-9:
-            T_min = Ta_vm + (Xf - X_no_cruise) / v_max + Td_vm
-        else:
-            v_lo = min(vi, vf)
-            v_hi = v_max
-            for _ in range(64):
-                vm = 0.5 * (v_lo + v_hi)
-                _, Xa = _ramp(vi, vm)
-                _, Xd = _ramp(vm, vf)
-                if Xa + Xd < Xf:
-                    v_lo = vm
-                else:
-                    v_hi = vm
-                if v_hi - v_lo < 1e-10:
-                    break
-            vp0 = 0.5 * (v_lo + v_hi)
-            Ta0, _ = _ramp(vi, vp0)
-            Td0, _ = _ramp(vp0, vf)
-            T_min = Ta0 + Td0
-
-        if T_m < T_min - 1e-9:
-            raise InfeasibleError(f"T_m={T_m:.6f} < T_min={T_min:.6f}")
-
-        # ------------------------------------------------------------------
-        # Find v_peak for fixed T_m via bisection
-        # ------------------------------------------------------------------
-        v_lo = min(vi, vf)
-        v_hi = v_max
-
-        _, tc_lo = _f(v_lo)
-        if tc_lo < -1e-9:
+        tol = 1e-9
+        if T < T_min - tol:
             raise InfeasibleError(
-                f"T_m={T_m:.4f} too short even for minimum v_peak={v_lo:.4f} "
-                f"(T_cruise={tc_lo:.4f} < 0)"
+                f"T too small: T={T:.6f} < T_min={T_min:.6f}"
+            )
+        if T > T_max + tol:
+            raise InfeasibleError(
+                f"T too large: T={T:.6f} > T_max={T_max:.6f}"
             )
 
-        f_lo, _ = _f(v_lo)
-        f_hi, _ = _f(v_hi)
+        v_m = self._bisect_vm(vi, vf, Xf, T, j_max, a_max, v_max, v_min)
+        return self._build(vi, vf, v_m, T, j_max, a_max)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _t_min(
+        self,
+        vi: float, vf: float, Xf: float,
+        j_max: float, a_max: float, v_max: float, v_min: float,
+    ) -> float:
+        """Time-optimal T: cruise at V_max if displacement permits."""
+        rk_in = ramp(vi, v_max, j_max, a_max)
+        rk_out = ramp(v_max, vf, j_max, a_max)
+        X_ramps = rk_in.displacement + rk_out.displacement
+
+        if X_ramps <= Xf + 1e-9:
+            # Fit a cruise segment at V_max to cover the remaining distance.
+            return rk_in.total_time + (Xf - X_ramps) / v_max + rk_out.total_time
+
+        # Ramps at V_max overshoot: find the largest v_m ≤ V_max such that
+        # the two ramps just fit inside Xf (no cruise phase).
+        v_lo, v_hi = v_min, v_max
+        for _ in range(64):
+            vm = 0.5 * (v_lo + v_hi)
+            X = ramp(vi, vm, j_max, a_max).displacement + ramp(vm, vf, j_max, a_max).displacement
+            if X < Xf:
+                v_lo = vm
+            else:
+                v_hi = vm
+            if v_hi - v_lo < 1e-10:
+                break
+        vm_star = 0.5 * (v_lo + v_hi)
+        return ramp(vi, vm_star, j_max, a_max).total_time + ramp(vm_star, vf, j_max, a_max).total_time
+
+    def _t_max(
+        self,
+        vi: float, vf: float, Xf: float,
+        j_max: float, a_max: float, v_min: float,
+    ) -> float:
+        """Time-permissive T: cruise at v_min.
+
+        If v_min == 0, T_max = inf (arbitrarily slow coast at 0 m/s).
+
+        If the two ramps at v_min already overshoot Xf, the trajectory
+        cannot slow below a higher v_m — T_max equals the no-cruise ramp
+        time at the smallest feasible v_m (unusual configuration).
+        """
+        if v_min <= 0.0:
+            return math.inf
+
+        rk_in = ramp(vi, v_min, j_max, a_max)
+        rk_out = ramp(v_min, vf, j_max, a_max)
+        X_ramps = rk_in.displacement + rk_out.displacement
+
+        if X_ramps <= Xf + 1e-9:
+            return rk_in.total_time + (Xf - X_ramps) / v_min + rk_out.total_time
+
+        # Ramps to v_min overshoot: find the smallest v_m ≥ v_min such that
+        # ramps still fit in Xf.  T_max is the no-cruise time at that v_m.
+        v_lo, v_hi = v_min, max(vi, vf)
+        for _ in range(64):
+            vm = 0.5 * (v_lo + v_hi)
+            X = ramp(vi, vm, j_max, a_max).displacement + ramp(vm, vf, j_max, a_max).displacement
+            if X < Xf:
+                v_hi = vm
+            else:
+                v_lo = vm
+            if v_hi - v_lo < 1e-10:
+                break
+        vm_star = 0.5 * (v_lo + v_hi)
+        return ramp(vi, vm_star, j_max, a_max).total_time + ramp(vm_star, vf, j_max, a_max).total_time
+
+    def _f(
+        self,
+        v_m: float, vi: float, vf: float, Xf: float, T: float,
+        j_max: float, a_max: float,
+    ) -> float:
+        """Displacement residual at cruise velocity v_m for fixed T."""
+        rk_in = ramp(vi, v_m, j_max, a_max)
+        rk_out = ramp(v_m, vf, j_max, a_max)
+        T_cruise = T - rk_in.total_time - rk_out.total_time
+        return rk_in.displacement + v_m * T_cruise + rk_out.displacement - Xf
+
+    def _bisect_vm(
+        self,
+        vi: float, vf: float, Xf: float, T: float,
+        j_max: float, a_max: float, v_max: float, v_min: float,
+    ) -> float:
+        """Bisect on v_m ∈ [v_min, V_max] to satisfy the displacement equation."""
+        v_lo, v_hi = v_min, v_max
+        f_lo = self._f(v_lo, vi, vf, Xf, T, j_max, a_max)
+        f_hi = self._f(v_hi, vi, vf, Xf, T, j_max, a_max)
 
         if abs(f_lo) < 1e-9:
-            v_peak = v_lo
-        elif abs(f_hi) < 1e-9:
-            v_peak = v_hi
-        elif f_lo * f_hi > 0:
-            raise InfeasibleError(
-                f"No root in v_peak range [{v_lo:.4f}, {v_hi:.4f}]: "
-                f"f_lo={f_lo:.4f}, f_hi={f_hi:.4f}"
-            )
-        else:
-            for _ in range(64):
-                vm = 0.5 * (v_lo + v_hi)
-                fv, _ = _f(vm)
-                if fv < 0:
-                    v_lo = vm
-                else:
-                    v_hi = vm
-                if v_hi - v_lo < 1e-10:
-                    break
-            v_peak = 0.5 * (v_lo + v_hi)
+            return v_lo
+        if abs(f_hi) < 1e-9:
+            return v_hi
 
-        Ta, _ = _ramp(vi, v_peak)
-        Td, _ = _ramp(v_peak, vf)
-        T_cruise = max(0.0, T_m - Ta - Td)
+        # f must be monotone-increasing in v_m; a sign check guards against
+        # numerical edge cases that would indicate a window-computation bug.
+        assert f_lo <= f_hi + 1e-6, (
+            f"f not monotone: f(v_min={v_lo:.4f})={f_lo:.4f} > f(V_max={v_hi:.4f})={f_hi:.4f}; "
+            "feasibility window is inconsistent"
+        )
 
-        # ------------------------------------------------------------------
-        # Phase durations
-        # ------------------------------------------------------------------
-        def _durations(v_a: float, v_b: float) -> tuple[float, float, float]:
-            dv = abs(v_b - v_a)
-            if dv < 1e-12:
-                return 0.0, 0.0, 0.0
-            use_a = dv >= dv_ramp_full - 1e-9
-            if use_a:
-                T1 = a_max / j_max
-                dv_in = a_max * T1
-                T2 = (dv - dv_in) / a_max
-                T3 = T1
+        for _ in range(64):
+            vm = 0.5 * (v_lo + v_hi)
+            fv = self._f(vm, vi, vf, Xf, T, j_max, a_max)
+            if fv < 0:
+                v_lo = vm
             else:
-                T1 = math.sqrt(dv / j_max)
-                T2 = 0.0
-                T3 = T1
-            return T1, T2, T3
+                v_hi = vm
+            if v_hi - v_lo < 1e-10:
+                break
+        return 0.5 * (v_lo + v_hi)
 
-        t1, t2, t3 = _durations(vi, v_peak)
-        t5, t6, t7 = _durations(v_peak, vf)
-        t4 = T_cruise
+    def _build(
+        self,
+        vi: float, vf: float, v_m: float, T: float,
+        j_max: float, a_max: float,
+    ) -> CompositeTrajectory:
+        """Assemble a CompositeTrajectory from the solved cruise velocity."""
+        rk_in = ramp(vi, v_m, j_max, a_max)
+        rk_out = ramp(v_m, vf, j_max, a_max)
+        T_cruise = max(0.0, T - rk_in.total_time - rk_out.total_time)
 
-        sign1 = 1.0 if v_peak >= vi else -1.0
-        sign2 = 1.0 if vf >= v_peak else -1.0
+        j_in = rk_in.sign * j_max
+        j_out = rk_out.sign * j_max
 
         phase_jerk = [
-            (t1,  sign1 * j_max),
-            (t2,  0.0),
-            (t3, -sign1 * j_max),
-            (t4,  0.0),
-            (t5,  sign2 * j_max),
-            (t6,  0.0),
-            (t7, -sign2 * j_max),
+            (rk_in.T1,  j_in),
+            (rk_in.T2,  0.0),
+            (rk_in.T3,  -j_in),
+            (T_cruise,   0.0),
+            (rk_out.T1,  j_out),
+            (rk_out.T2,  0.0),
+            (rk_out.T3,  -j_out),
         ]
 
-        # ------------------------------------------------------------------
-        # Build ConstantJerkTrajectory segments
-        # ------------------------------------------------------------------
         segments = []
         cur_v = vi
         cur_a = 0.0
@@ -220,12 +259,8 @@ class SCurveSolver(IProfileSolver):
             raise InfeasibleError("No segments generated — degenerate profile.")
 
         T_actual = sum(seg.T for seg in segments)
-        x0_composite = np.array([0.0, vi, 0.0])
-        composite = CompositeTrajectory(
-            x0=x0_composite,
+        return CompositeTrajectory(
+            x0=np.array([0.0, vi, 0.0]),
             T=T_actual,
             segments=tuple(segments),
         )
-
-
-        return composite

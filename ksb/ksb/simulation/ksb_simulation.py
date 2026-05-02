@@ -89,7 +89,8 @@ class KSBSimulation:
             self.Vmax,
             self.gap_min,
         ])
-        self.policy = Policy(input_length=self.input_length)
+        v_min = float(cfg.get("v_min", 0.0))
+        self.policy = Policy(input_length=self.input_length, v_min=v_min)
 
         self.j_u_max = float(cfg.get('j_u_max', 100.))
         self.a_u_max = float(cfg.get('a_u_max', 2.0))
