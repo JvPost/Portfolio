@@ -206,74 +206,8 @@ def belt_lengths(
     return L_min + R * p
 
 
-def get_assigned_slots(
-    T0: np.ndarray,
-    slot_length: float,
-    vi: float,
-    vf: float,
-    L_buffer_ctrl: float,
-    bounds: np.ndarray,
-    policy: Policy,
-    solver: IProfileSolver,
-    t_offset: float = 0.0,
-) -> Tuple[np.ndarray, List[TrajectoryProfile]]:
-    """Assign each item to the earliest feasible slot index.
-
-    For each item's control-start time T0[i], iterates over slot indices k
-    until a time horizon T = k*slot_period - T0[i] allows the solver to
-    produce a feasible trajectory covering L_buffer_ctrl metres in time T.
-
-    Args:
-        T0: control-start times, shape (batch,)
-        slot_length: slot spacing (m)
-        vi: initial velocity (m/s)
-        vf: target velocity at slot (m/s)
-        L_buffer_ctrl: distance to cover in the buffer (m)
-        bounds: np.array([j_max, A_max, V_max, gap_min])
-        policy: Policy config
-        solver: trajectory solver
-        t_offset: time offset for slot phase (s)
-
-    Returns:
-        slot_indices: shape (batch,), integer slot indices
-    """
-    item_slot_indeces = np.zeros_like(T0, dtype=int)
-    item_slot_trajs = []
-    vd = vf
-    slot_period = slot_length / vd
-    slot_idx = int((T0[0] + L_buffer_ctrl / vi) // slot_period) - 1 # minus one, because zero indexing
-
-    i = 0
-    for t0 in T0: # loop over inputs 
-        found = False
-        input_attempts = 0
-        while not found:
-            input_attempts += 1
-            if input_attempts > 10:
-                raise SlotAssignmentError(f"No feasible slot for item at t0={t0:.4f}")
-            
-            try:
-                slot_idx += 1
-                slot_time = slot_idx * slot_period + t_offset
-                time_horizon = slot_time - t0
-                traj = solver.solve(0.0, vi, L_buffer_ctrl, vd, time_horizon, bounds, policy)
-                found = True
-                item_slot_indeces[i] = slot_idx
-
-                i += 1
-            except InfeasibleError:
-                continue
-
-        item_slot_trajs.append(traj)
-
-        if not found:
-            raise ValueError(f"No feasible slot for item at t0={t0:.4f}")
-
-    assert i == T0.shape[0]
-    assert len(item_slot_indeces) == len(item_slot_trajs)
-    return item_slot_indeces, item_slot_trajs
-
 def get_next_slot(
+    idx: int,
     t_control_start: float,
     slot_idx: int,
     slot_length: float,
@@ -313,9 +247,11 @@ def get_next_slot(
 
     while True:
         attempts += 1
-        if attempts > 10:
+        if attempts > 20:
+            if idx == 0:
+                raise SlotAssignmentError(f"No feasible slot found for first input, improve heuristic.")
             raise SlotAssignmentError(
-                f"No feasible slot for input at t_control_start={t_control_start:.4f}"
+                f"No feasible slot for input {idx+1}"
             )
 
         slot_idx += 1

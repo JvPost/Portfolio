@@ -6,13 +6,13 @@ N_min: 3
 N_max: 6
 
 # Loss weights
-lambda_U: 0.05
+lambda_U: 1.00
 lambda_L: 0.50
 lambda_T: 1.00
 lambda_N: 0.10
 
 # CMA-ES settings
-popsize: 8        # small population for speed
+popsize: 8 # small population for speed
 restarts: 2
 n_seeds: 2
 max_iter: 20

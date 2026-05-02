@@ -1,6 +1,6 @@
 """CMA-ES inner solver for whole-line design optimization (Track A).
 
-Optimizes the 8-dimensional continuous decision vector theta_c for a fixed N^B,
+Optimizes the 6-dimensional continuous decision vector theta_c for a fixed N^B,
 with multi-restart and best-across-restarts selection.
 """
 from __future__ import annotations
@@ -24,14 +24,12 @@ _DEFAULT_BOUNDS: dict[str, tuple[float, float]] = {
     "L_buffer":    (None, 8.0),    # lower set per N^B at solve time
     "beta":        (-2.0, 2.0),
     "gamma":       (-2.0, 2.0),
-    "v_buff_out":  (0.5, None),    # upper = Vmax, set at solve time
-    "a_u_max":     (0.2, None),    # upper = Amax, set at solve time
-    "v_u_max":     (None, None),   # lower = vu_nominal, upper = Vmax, set at solve time
-    "eta_s":       (1.0, 2.0),
     "eta_r":       (1.0, 2.0),
+    "eta_s":       (1.0, 2.0),
+    "eta_v":       (1.0, 2.0),
 }
 
-_THETA_KEYS = ["L_buffer", "beta", "gamma", "v_buff_out", "a_u_max", "v_u_max", "eta_s", "eta_r"]
+_THETA_KEYS = ["L_buffer", "beta", "gamma", "eta_r", "eta_s", "eta_v"]
 
 
 @dataclass
@@ -51,25 +49,17 @@ class InnerResult:
 
 def _build_bounds(n_buffer_seg: int, base_cfg: dict, user_bounds: dict | None) -> dict:
     """Merge default bounds with per-N^B constraints and user overrides."""
-    Vmax = float(base_cfg.get("Vmax", 3.0))
-    Amax = float(base_cfg.get("Amax", 8.5))
     input_length = float(base_cfg.get("input_length", 0.32))
     Lmin_factor = float(base_cfg.get("Lmin_factor", 1.25))
     Lmin = Lmin_factor * input_length
-
-    arrival_rate_ppm = float(base_cfg.get("arrival_rate_ppm", 180.0))
-    gap_mean = float(base_cfg.get("input_gap_mean", 0.6))
-    vu_nominal = arrival_rate_ppm / 60.0 * gap_mean
 
     bounds = {
         "L_buffer":   (n_buffer_seg * Lmin, 8.0),
         "beta":       (-2.0, 2.0),
         "gamma":      (-2.0, 2.0),
-        "v_buff_out": (0.5, Vmax),
-        "a_u_max":    (0.2, Amax),
-        "v_u_max":    (vu_nominal, Vmax),
-        "eta_s":      (1.0, 2.0),
         "eta_r":      (1.0, 2.0),
+        "eta_s":      (1.0, 2.0),
+        "eta_v":      (1.0, 2.0),
     }
 
     if user_bounds:
@@ -90,20 +80,14 @@ def _theta_to_cfg(theta: np.ndarray, base_cfg: dict, n_buffer_seg: int) -> dict:
     cfg = dict(base_cfg)
     cfg["n_buffer_seg"] = n_buffer_seg
 
-    (L_buffer, beta, gamma, v_buff_out, a_u_max, v_u_max, eta_s, eta_r) = theta
+    (L_buffer, beta, gamma, eta_r, eta_s, eta_v) = theta
 
-    input_length = float(base_cfg.get("input_length", 0.32))
-    arrival_rate_ppm = float(base_cfg.get("arrival_rate_ppm", 180.0))
-
-    cfg["L_buffer"]        = float(L_buffer)
-    cfg["beta"]            = float(beta)
-    cfg["gamma"]           = float(gamma)
-    cfg["v_buff_out"]      = float(v_buff_out)
-    cfg["a_u_max"]         = float(a_u_max)
-    cfg["v_u_max"]         = float(v_u_max)
-    cfg["eta_s"] = float(eta_s)
-    cfg["eta_r"] = float(eta_r)
-    cfg["j_u_max"]         = float(base_cfg.get("jmax", 100.0))   # shared bound
+    cfg["L_buffer"] = float(L_buffer)
+    cfg["beta"]     = float(beta)
+    cfg["gamma"]    = float(gamma)
+    cfg["eta_r"]    = float(eta_r)
+    cfg["eta_s"]    = float(eta_s)
+    cfg["eta_v"]    = float(eta_v)
 
     return cfg
 
@@ -124,21 +108,22 @@ def _theta_from_cfg(base_cfg: dict, n_buffer_seg: int, bounds: dict) -> np.ndarr
     lo_L, hi_L = bounds["L_buffer"]
     L_buffer_clamped = float(np.clip(L_buffer_raw, lo_L, hi_L))
 
+    lo_r, hi_r = bounds["eta_r"]
+    eta_r = float(np.clip(base_cfg.get("eta_r", 1.2), lo_r, hi_r))
+
     lo_s, hi_s = bounds["eta_s"]
     eta_s = float(np.clip(base_cfg.get("eta_s", 1.5), lo_s, hi_s))
 
-    lo_r, hi_r = bounds["eta_r"]
-    eta_r = float(np.clip(base_cfg.get("eta_r", 1.2), lo_r, hi_r))
+    lo_v, hi_v = bounds["eta_v"]
+    eta_v = float(np.clip(base_cfg.get("eta_v", 1.16), lo_v, hi_v))
 
     return np.array([
         L_buffer_clamped,
         float(base_cfg.get("beta", 0.0)),
         float(base_cfg.get("gamma", 0.0)),
-        float(base_cfg.get("v_buff_out", 2.0)),
-        float(base_cfg.get("a_u_max", 2.0)),
-        float(base_cfg.get("v_u_max", 2.0)),
-        eta_s,
         eta_r,
+        eta_s,
+        eta_v,
     ])
 
 
@@ -310,7 +295,7 @@ def solve_inner(
     except Exception:
         final_lr = LossResult(
             L=best_L, phi_sum=float("nan"), U_sum=float("nan"),
-            L_buffer=float(best_theta[0]), eta_r=float(best_theta[7]),
+            L_buffer=float(best_theta[0]), eta_r=float(best_theta[3]),
             sentinel=True, per_seed=[],
         )
 

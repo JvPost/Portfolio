@@ -128,7 +128,7 @@ def main():
         ts = r.theta_star
         print(
             f"  NB={nb:02d}  L*={r.L_star:.4f}  L_B*={ts['L_buffer']:.2f}"
-            f"  v_BR*={ts['v_buff_out']:.2f}  beta*={ts['beta']:.2f}"
+            f"  eta_v*={ts['eta_v']:.2f}  beta*={ts['beta']:.2f}"
             f"  gamma*={ts['gamma']:.2f}  eta_s*={ts['eta_s']:.2f}"
             f"  eta_r*={ts['eta_r']:.2f}  evals={r.n_evals}  conv={r.converged}"
             f"  ({dt:.1f}s)"

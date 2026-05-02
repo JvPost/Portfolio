@@ -139,12 +139,12 @@ class KSBSimulation:
         t_duration_upstream = np.empty(self.batch, dtype=float)
         buffer_trajectories:List[TrajectoryProfile] = []
         upstream_ctrl_trajectories:List[TrajectoryProfile] = []
-        slot_idx = 0 # find a better heuristic than just 0
 
         __upstream_ctrl_traj = self._u_control.subsection(.0, L_upstream_ctrl)
         __T_upstream = __upstream_ctrl_traj.T
         __vf_upstream = __upstream_ctrl_traj.eval(__T_upstream)[V]
-        slot_idx = int((__T_upstream + self.L_buffer_ctrl / __vf_upstream) // slot_period)
+        # slot_idx = int((__T_upstream + self.L_buffer_ctrl / __vf_upstream) // slot_period)
+        slot_idx = 0
 
         prev_slot_idx = None
         
@@ -158,7 +158,7 @@ class KSBSimulation:
             t_offset = -(self.input_length / self.v_buff_out + self._registrar.T_total)           
 
             slot_idx, buffer_traj = utils.get_next_slot(
-                t_in, slot_idx, self.slot_length,
+                i, t_in, slot_idx, self.slot_length,
                 v_in, self.v_buff_out, L_buffer_ctrl, self.bounds,
                 self.policy, self.solver,
                 t_offset=t_offset,
