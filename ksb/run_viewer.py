@@ -14,7 +14,7 @@ from ksb.simulation.ksb_simulation import KSBSimulation
 from ksb.viewer.viewer import KSBViewer
 from ksb.analysis.cost import compute_C_bb, compute_S_bb
 
-_CONFIG_DIR = Path(__file__).parent / "configs"
+_CONFIG_DIR = Path(__file__).parent / "configs" / "system"
 
 
 def main():
