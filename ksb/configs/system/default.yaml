@@ -1,5 +1,5 @@
 # input
-batch: 50
+batch: 100
 input_length: 0.32
 input_gap_mean: 0.6
 input_gap_std: 0.05
@@ -16,8 +16,8 @@ jmax: 100.0
 Vmax: 3.0
 Amax: 8.5
 
-# solver: quintic
-solver: scurve
+solver: quintic
+# solver: scurve
 L_buffer: 3
 n_buffer_seg: 6
 eta_v: 1.16 # kinematic headroom: v^{BR} = eta_v * v_d
@@ -32,5 +32,5 @@ n_reg_seg: 1
 
 # downstream
 L_downstream: 2.0
-eta_s: 1.875 # slot_length = eta_s * input_length
+eta_s: 1.1 # slot_length = eta_s * input_length
 eta_r: 1.2 # slot_rate   = eta_r * arrival_rate_ppm

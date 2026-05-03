@@ -222,9 +222,19 @@ def get_next_slot(
 ) -> Tuple[int, TrajectoryProfile]:
     """Assign a single input to the earliest feasible slot index.
 
+    Uses `solver.feasibility_window` to compute a slot-index range directly,
+    then iterates only within that range.  Solvers that return the default
+    window (0.0, inf) — quintic, linear — degenerate to the previous
+    behaviour: walk forward from k_lo until success or the 20-attempt cap.
+
+    Mapping between slot index k and time horizon T:
+        T(k) = k * slot_period + t_offset - t_control_start
+        k*(T) = (T + t_control_start - t_offset) / slot_period
+
     Args:
+        idx:             0-based position in the batch (for error messages)
         t_control_start: buffer entry time for this input (s)
-        slot_idx:        slot index to start searching from
+        slot_idx:        slot index of the previous input (search starts at +1)
         slot_length:     slot spacing (m)
         vi:              initial velocity (m/s)
         vf:              target velocity at buffer exit (m/s)
@@ -232,35 +242,78 @@ def get_next_slot(
         bounds:          np.array([j_max, A_max, V_max, gap_min])
         policy:          Policy config
         solver:          trajectory solver
-        t_offset:        time offset added to each slot time (s); use
-                         -T_registrar to account for registrar transit
-        vd_slot:         downstream speed used for slot period calculation
-                         (m/s); defaults to vf when omitted, for the case
-                         where the buffer exits directly at v_d
+        t_offset:        time offset added to each slot time (s)
+        vd_slot:         downstream speed for slot-period calculation (m/s);
+                         defaults to vf when omitted
 
     Returns:
         slot_idx: assigned slot index
         traj:     feasible trajectory profile
+
+    Raises:
+        SlotAssignmentError: on window-empty, window-exhausted, or cap failure.
     """
     slot_period = slot_length / (vd_slot if vd_slot is not None else vf)
+    k_lo = slot_idx + 1  # must occupy a later slot than the previous input
+
+    T_min, T_max = solver.feasibility_window(0.0, vi, L_buffer_ctrl, vf, bounds, policy)
+    hint = "; improve heuristic" if idx == 0 else ""
+
+    # Sentinel: feasibility_window signals an infeasible geometry with T_min > T_max.
+    if T_min > T_max:
+        raise SlotAssignmentError(
+            f"No feasible slot for input {idx+1}: solver reports infeasible geometry "
+            f"(T_min={T_min}, T_max={T_max})" + hint
+        )
+
+    # Map T-window to k-window via the affine inverse.
+    base = (t_control_start - t_offset) / slot_period
+    k_min_window = math.ceil(base + T_min / slot_period)
+    bounded = not math.isinf(T_max)
+    k_max_window = math.floor(base + T_max / slot_period) if bounded else None
+
+    k_start = max(k_lo, k_min_window)
+
+    # Window entirely below the earliest allowable slot (only detectable when bounded).
+    if bounded and k_start > k_max_window:
+        raise SlotAssignmentError(
+            f"No feasible slot for input {idx+1}: "
+            f"window [k_min={k_min_window}, k_max={k_max_window}] "
+            f"empty or below k_lo={k_lo} "
+            f"(T_min={T_min:.4f}, T_max={T_max:.4f})"
+            + hint
+        )
+
     attempts = 0
+    k = k_start - 1
 
     while True:
+        k += 1
         attempts += 1
-        if attempts > 20:
-            if idx == 0:
-                raise SlotAssignmentError(f"No feasible slot found for first input, improve heuristic.")
+
+        # Primary stop for bounded-window solvers: exhausted the window + 5-slot extension.
+        if bounded and k > k_max_window + 5:
+            n_tried = k - k_start
             raise SlotAssignmentError(
-                f"No feasible slot for input {idx+1}"
+                f"No feasible slot for input {idx+1}: "
+                f"all {n_tried} slots in feasibility window rejected by solver"
+                + hint
             )
 
-        slot_idx += 1
-        slot_time = slot_idx * slot_period + t_offset
+        # Safety cap: backstop for default-window (unbounded) solvers.
+        if attempts > 20:
+            raise SlotAssignmentError(
+                f"No feasible slot for input {idx+1}: 20 attempts exhausted" + hint
+            )
+
+        slot_time = k * slot_period + t_offset
         time_horizon = slot_time - t_control_start
 
         try:
-            traj: TrajectoryProfile = solver.solve(0.0, vi, L_buffer_ctrl, vf, time_horizon, bounds, policy)
-            return slot_idx, traj
+            traj: TrajectoryProfile = solver.solve(
+                0.0, vi, L_buffer_ctrl, vf, time_horizon, bounds, policy
+            )
+            return k, traj
         except InfeasibleError:
             continue
 
