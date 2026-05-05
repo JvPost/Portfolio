@@ -22,7 +22,7 @@ class LinearTrajectorySolver(IProfileSolver):
                 f"Linear solver requires consistent velocity: "
                 f"computed v={v_req}, but vi={vi}, vf={vf}"
             )
-        if abs(v_req) > bounds[V_MAX]:
+        if abs(v_req) > bounds[V_MAX] + 1e-9:  # 1e-9 atol for floating-point rounding
             raise InfeasibleError(f"Required velocity {v_req} exceeds V_max {bounds[V_MAX]}")
         if bounds[0] < 0 or bounds[1] < 0:
             raise InfeasibleError("Bounds must allow zero a/j")

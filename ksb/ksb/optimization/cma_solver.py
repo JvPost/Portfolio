@@ -127,6 +127,62 @@ def _theta_from_cfg(base_cfg: dict, n_buffer_seg: int, bounds: dict) -> np.ndarr
     ])
 
 
+def _project_to_feasibility(
+    theta_phys: np.ndarray, V_max: float, r_u: float, l: float
+) -> tuple[np.ndarray, str]:
+    """Cascading projection onto the V_max-feasible tetrahedron.
+
+    Constraint: eta_v * eta_r * eta_s <= V_max / (r_u * l).
+    Cascade order follows asymmetric commitment of the eta-coordinates: eta_s is
+    clipped before eta_v because eta_v is the least committed (unpriced; only
+    constrained by feasibility) and eta_s is less committed than eta_r (which is
+    priced explicitly via lambda_T * eta_r in the loss). See "Constraint geometry
+    and enforcement" in Optimization notes.md.
+
+    Box bounds are NOT re-enforced. On the configured hardware the cascade is
+    feasible w.r.t. boxes by construction; the assertion in ksb_simulation.py is
+    the canary if the hardware envelope changes.
+
+    Returns (theta_projected, event) where event is one of:
+        "none"   — no clip needed
+        "step2"  — only eta_v clipped (typical case when wall binds)
+        "both"   — eta_s clipped (wedge case) and eta_v subsequently clipped
+    Step 1 alone ("step1") is impossible: clipping eta_s sets eta_r*eta_s exactly
+    to vmax_budget, so any eta_v > 1 triggers step 2.
+    """
+    theta = theta_phys.copy()
+    # _THETA_KEYS = ["L_buffer", "beta", "gamma", "eta_r", "eta_s", "eta_v"]
+    eta_r, eta_s, eta_v = theta[3], theta[4], theta[5]
+    event = "none"
+
+    # Mirrors the simulation's exact multiplication order (ksb_simulation.py:59,63):
+    #   rd = eta_r * ru;  slot_length = eta_s * l;  vd = rd * slot_length
+    # Using the same float ops as the simulation avoids arithmetic-order divergence
+    # between the projector and the sim's vd computation.
+    vd_sim = (eta_r * r_u) * (eta_s * l)
+
+    # Step 1: project eta_s if (eta_r, eta_s) is in the bad wedge.
+    # Condition uses vd_sim (not a separate vmax_budget expression) so the wedge
+    # check and the step-2 eta_v_max use the same arithmetic path — preventing the
+    # case where a different fp expression misses the wedge and step 2 then
+    # produces eta_v_max < 1.
+    if vd_sim > V_max:
+        eta_s = V_max / ((eta_r * r_u) * l)
+        theta[4] = eta_s
+        # Recompute and clamp: the clip arithmetic can overshoot V_max by ~1 ULP.
+        vd_sim = min((eta_r * r_u) * (eta_s * l), V_max)
+        event = "step1"
+
+    # Step 2: project eta_v.
+    # vd_sim <= V_max here, so eta_v_max >= 1.
+    eta_v_max = V_max / vd_sim
+    if eta_v > eta_v_max:
+        theta[5] = eta_v_max
+        event = "both" if event == "step1" else "step2"
+
+    return theta, event
+
+
 def solve_inner(
     n_buffer_seg: int,
     base_cfg: dict,
@@ -155,6 +211,10 @@ def solve_inner(
     unit_lo = [0.0] * len(_THETA_KEYS)
     unit_hi = [1.0] * len(_THETA_KEYS)
 
+    r_u = float(base_cfg.get("arrival_rate_ppm", 180.0)) / 60.0
+    l = float(base_cfg.get("input_length", 0.32))
+    V_max = float(base_cfg.get("Vmax", 3.0))
+
     loss_seeds = list(range(n_seeds_loss))
 
     t_inner_start = time.perf_counter()
@@ -164,9 +224,12 @@ def solve_inner(
     _eval_count = [0]
     _eval_t_accum = [0.0]
     _exc_counts: Counter = Counter()
+    _proj_counts: Counter = Counter()
 
     def objective(x_unit: np.ndarray) -> float:
         theta = _to_physical(np.clip(x_unit, 0.0, 1.0), lower, upper)
+        theta, proj_event = _project_to_feasibility(theta, V_max, r_u, l)
+        _proj_counts[proj_event] += 1
         cfg = _theta_to_cfg(theta, base_cfg, n_buffer_seg)
         t0 = time.perf_counter()
         try:
@@ -282,6 +345,10 @@ def solve_inner(
         summary = "  ".join(f"{k}={v}" for k, v in sorted(_exc_counts.items()))
         log.warning("NB=%d  exception summary: %s  (total=%d / %d evals)",
                     n_buffer_seg, summary, sum(_exc_counts.values()), total_evals)
+    if _proj_counts:
+        summary = "  ".join(f"{k}={v}" for k, v in sorted(_proj_counts.items()))
+        log.info("NB=%d  projection summary: %s  (total=%d / %d evals)",
+                 n_buffer_seg, summary, sum(_proj_counts.values()), total_evals)
 
     best_cfg = _theta_to_cfg(best_theta, base_cfg, n_buffer_seg)
     try:

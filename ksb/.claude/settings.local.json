@@ -19,7 +19,11 @@
       "Bash(conda run *)",
       "Bash(echo \"EXIT:$?\")",
       "Bash(git check-ignore *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(tee /tmp/opt_run2.log)",
+      "Bash(tee /tmp/opt_run3.log)",
+      "Bash(tee /tmp/opt_run4.log)"
     ]
   }
 }

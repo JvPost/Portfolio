@@ -64,10 +64,13 @@ class KSBSimulation:
 
         eta_v = float(cfg.get("eta_v", 1.16))  # kinematic headroom factor
         self.v_buff_out = eta_v * self.vd       # v^{BR} = eta_v * v_d
-        assert self.v_buff_out >= self.vd, \
+        _fp_atol = 1e-9  # tolerance for floating-point rounding at the constraint boundary
+        assert self.v_buff_out >= self.vd - _fp_atol, \
             f"v_buff_out ({self.v_buff_out}) must be >= v_d ({self.vd}); eta_v >= 1"
-        assert self.v_buff_out <= self.Vmax, \
+        assert self.v_buff_out <= self.Vmax + _fp_atol, \
             f"v_buff_out ({self.v_buff_out}) exceeds Vmax ({self.Vmax}); reduce eta_v or eta_r/eta_s"
+
+        
 
         self.slot_period = self.slot_length / self.vd
 
