@@ -195,6 +195,9 @@ def belt_lengths(
     """
     if L_total < N * L_min:
         raise ValueError("Infeasible: L_total < N * L_min")
+    if beta == gamma == 0.0: # small optimization for when beta == gamma == 0
+        return np.ones(N) * L_total / N
+
     R = L_total - N * L_min
     # centered, normalized indices: ~[-1, 1] for N >= 2
     k = (np.arange(1, N + 1) - (N + 1) / 2.0) / max((N - 1) / 2.0, 1.0)

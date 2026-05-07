@@ -43,6 +43,7 @@ class KSBSimulation:
         Lmin = Lmin_factor * self.input_length
         beta = float(cfg.get("beta", 0.0))
         gamma = float(cfg.get("gamma", 0.0))
+
         self.Ls = utils.belt_lengths(self.n_buffer_seg, self.L_buffer, Lmin, beta, gamma)
 
         eta_s = float(cfg.get("eta_s", 1.25))
