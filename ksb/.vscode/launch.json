@@ -41,7 +41,7 @@
             "program": "${workspaceFolder}/run_optimize.py",
             "args": [
                 "--opt-config",
-                "quick",
+                "default",
                 "--batch",
                 "20"
             ],

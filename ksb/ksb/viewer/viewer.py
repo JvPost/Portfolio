@@ -15,6 +15,7 @@ import pygame._freetype as _ft   # C extension — avoids pygame.font/sysfont ci
 
 from ksb.motion.trajectories import P, V, A
 from ksb.simulation.result import SimulationResult
+from ksb.simulation.utils import belt_lengths
 
 if TYPE_CHECKING:
     from ksb.analysis.events import SegmentEvents
@@ -46,6 +47,8 @@ ITEM_BORDER = ( 40,  40,  60)
 
 ITEM_RED_BUDGET  = (220,  60,  60)   # budget-infeasible (soft miss)
 ITEM_RED_OVERLAP = (150,  20,  30)   # overlap/collision (physical crash)
+
+BUF_SEG_DIV_COLOR = (100, 115, 165)  # interior buffer segment dividers
 
 SLOT_COLOR  = ( 30,  30,  40)
 
@@ -135,6 +138,18 @@ class KSBViewer:
         self.input_length = float(cfg.get("input_length", 0.32))
         self.n_buffer_seg = int(cfg.get("n_buffer_seg", 5))
         self.n_reg_seg    = int(cfg.get("n_reg_seg", 1))
+
+        # Non-uniform segment lengths and cumulative boundary positions (buffer-local coords).
+        # Defaults match KSBSimulation.__init__ exactly.
+        _Lmin = float(cfg.get("Lmin_factor", 0.5)) * float(cfg.get("input_length", 0.32))
+        _buf_Ls = belt_lengths(
+            int(cfg["n_buffer_seg"]),
+            float(cfg["L_buffer"]),
+            _Lmin,
+            float(cfg.get("beta", 0.0)),
+            float(cfg.get("gamma", 0.0)),
+        )
+        self._buf_cum = np.concatenate([[0.0], np.cumsum(_buf_Ls)])
 
         # ------------------------------------------------------------------
         # Simulation timing
@@ -367,17 +382,17 @@ class KSBViewer:
         r_up = pygame.Rect(lane.left, y, self.x_buf_start - lane.left, h)
         pygame.draw.rect(screen, UPSTREAM_COLOR, r_up)
 
-        # Buffer zone — draw individual segments as rectangles
-        section_len = self.L_buf / self.n_buffer_seg
+        # Buffer zone — draw individual segments using non-uniform belt_lengths widths
         for k in range(self.n_buffer_seg):
-            px_left = MARGIN + _px(self.L_up + k * section_len, self.ppm)
-            px_right = MARGIN + _px(self.L_up + (k + 1) * section_len, self.ppm)
-            segment_w = px_right - px_left
-            seg_rect = pygame.Rect(px_left, y, segment_w, h)
-            seg_color = self._get_buffer_segment_color(k)
-            pygame.draw.rect(screen, seg_color, seg_rect)
-            # Draw segment border
-            pygame.draw.rect(screen, ZONE_LINE_COLOR, seg_rect, width=1)
+            px_left  = MARGIN + _px(self.L_up + self._buf_cum[k],     self.ppm)
+            px_right = MARGIN + _px(self.L_up + self._buf_cum[k + 1], self.ppm)
+            seg_rect = pygame.Rect(px_left, y, max(1, px_right - px_left), h)
+            pygame.draw.rect(screen, self._get_buffer_segment_color(k), seg_rect)
+
+        # Interior segment dividers: N-1 inset lines, visually lighter than zone edges
+        for k in range(1, self.n_buffer_seg):
+            px = MARGIN + _px(self.L_up + self._buf_cum[k], self.ppm)
+            pygame.draw.line(screen, BUF_SEG_DIV_COLOR, (px, y + 4), (px, y + h - 4), 1)
 
         # Registrar zone (may be zero-width if L_reg == 0)
         if self.x_dn_start > self.x_reg_start:

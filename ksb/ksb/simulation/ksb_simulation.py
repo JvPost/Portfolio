@@ -39,7 +39,7 @@ class KSBSimulation:
         self.n_buffer_seg = int(cfg.get("n_buffer_seg", 5))
         self.n_reg_seg = int(cfg.get("n_reg_seg", 5))
 
-        Lmin_factor = float(cfg.get("Lmin_factor", 1.25))
+        Lmin_factor = float(cfg.get("Lmin_factor", 0.5))
         Lmin = Lmin_factor * self.input_length
         beta = float(cfg.get("beta", 0.0))
         gamma = float(cfg.get("gamma", 0.0))

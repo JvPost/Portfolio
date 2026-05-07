@@ -1,6 +1,6 @@
 """CMA-ES inner solver for whole-line design optimization (Track A).
 
-Optimizes the 6-dimensional continuous decision vector theta_c for a fixed N^B,
+Optimizes the 4-dimensional continuous decision vector theta_c for a fixed N^B,
 with multi-restart and best-across-restarts selection.
 """
 from __future__ import annotations
@@ -22,14 +22,12 @@ log = logging.getLogger(__name__)
 # Keys match the names used in _theta_to_cfg().
 _DEFAULT_BOUNDS: dict[str, tuple[float, float]] = {
     "L_buffer":    (None, 8.0),    # lower set per N^B at solve time
-    "beta":        (-2.0, 2.0),
-    "gamma":       (-2.0, 2.0),
     "eta_r":       (1.0, 2.0),
     "eta_s":       (1.0, 2.0),
     "eta_v":       (1.0, 2.0),
 }
 
-_THETA_KEYS = ["L_buffer", "beta", "gamma", "eta_r", "eta_s", "eta_v"]
+_THETA_KEYS = ["L_buffer", "eta_r", "eta_s", "eta_v"]
 
 
 @dataclass
@@ -55,8 +53,6 @@ def _build_bounds(n_buffer_seg: int, base_cfg: dict, user_bounds: dict | None) -
 
     bounds = {
         "L_buffer":   (n_buffer_seg * Lmin, 8.0),
-        "beta":       (-2.0, 2.0),
-        "gamma":      (-2.0, 2.0),
         "eta_r":      (1.0, 2.0),
         "eta_s":      (1.0, 2.0),
         "eta_v":      (1.0, 2.0),
@@ -80,11 +76,9 @@ def _theta_to_cfg(theta: np.ndarray, base_cfg: dict, n_buffer_seg: int) -> dict:
     cfg = dict(base_cfg)
     cfg["n_buffer_seg"] = n_buffer_seg
 
-    (L_buffer, beta, gamma, eta_r, eta_s, eta_v) = theta
+    (L_buffer, eta_r, eta_s, eta_v) = theta
 
     cfg["L_buffer"] = float(L_buffer)
-    cfg["beta"]     = float(beta)
-    cfg["gamma"]    = float(gamma)
     cfg["eta_r"]    = float(eta_r)
     cfg["eta_s"]    = float(eta_s)
     cfg["eta_v"]    = float(eta_v)
@@ -117,14 +111,7 @@ def _theta_from_cfg(base_cfg: dict, n_buffer_seg: int, bounds: dict) -> np.ndarr
     lo_v, hi_v = bounds["eta_v"]
     eta_v = float(np.clip(base_cfg.get("eta_v", 1.16), lo_v, hi_v))
 
-    return np.array([
-        L_buffer_clamped,
-        float(base_cfg.get("beta", 0.0)),
-        float(base_cfg.get("gamma", 0.0)),
-        eta_r,
-        eta_s,
-        eta_v,
-    ])
+    return np.array([L_buffer_clamped, eta_r, eta_s, eta_v])
 
 
 def _project_to_feasibility(
@@ -151,8 +138,8 @@ def _project_to_feasibility(
     to vmax_budget, so any eta_v > 1 triggers step 2.
     """
     theta = theta_phys.copy()
-    # _THETA_KEYS = ["L_buffer", "beta", "gamma", "eta_r", "eta_s", "eta_v"]
-    eta_r, eta_s, eta_v = theta[3], theta[4], theta[5]
+    # _THETA_KEYS = ["L_buffer", "eta_r", "eta_s", "eta_v"]
+    eta_r, eta_s, eta_v = theta[1], theta[2], theta[3]
     event = "none"
 
     # Mirrors the simulation's exact multiplication order (ksb_simulation.py:59,63):
@@ -168,7 +155,7 @@ def _project_to_feasibility(
     # produces eta_v_max < 1.
     if vd_sim > V_max:
         eta_s = V_max / ((eta_r * r_u) * l)
-        theta[4] = eta_s
+        theta[2] = eta_s
         # Recompute and clamp: the clip arithmetic can overshoot V_max by ~1 ULP.
         vd_sim = min((eta_r * r_u) * (eta_s * l), V_max)
         event = "step1"
@@ -177,7 +164,7 @@ def _project_to_feasibility(
     # vd_sim <= V_max here, so eta_v_max >= 1.
     eta_v_max = V_max / vd_sim
     if eta_v > eta_v_max:
-        theta[5] = eta_v_max
+        theta[3] = eta_v_max
         event = "both" if event == "step1" else "step2"
 
     return theta, event
@@ -362,7 +349,7 @@ def solve_inner(
     except Exception:
         final_lr = LossResult(
             L=best_L, phi_sum=float("nan"), U_sum=float("nan"),
-            L_buffer=float(best_theta[0]), eta_r=float(best_theta[3]),
+            L_buffer=float(best_theta[0]), eta_r=float(best_theta[1]),
             sentinel=True, per_seed=[],
         )
 

@@ -43,7 +43,7 @@ def compute_C_bb(events: SegmentEvents, j_max: float) -> BBCostResult:
     See docs/Buffer minimum-time cost.md §6.2.
     """
     j_req = compute_j_req(events)
-    j_tilde = np.maximum(j_max, j_req)
+    j_tilde = np.maximum(j_max, j_req * (1.0 + 1e-9))
 
     a_m = events.a_minus
     a_p = events.a_plus

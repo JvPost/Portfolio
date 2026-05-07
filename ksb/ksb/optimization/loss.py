@@ -46,6 +46,7 @@ def compute_loss(
     Sentinel handling: if any Phi cell is +inf or NaN across any seed,
     sentinel=True and L=+inf. CMA-ES treats +inf as infeasible.
     """
+    n_buffer_seg = cfg['n_buffer_seg']
     if seeds is None:
         seeds = list(range(n_seeds))
 
@@ -103,7 +104,7 @@ def compute_loss(
     if sentinel:
         L = float("inf")
     else:
-        L = phi_mean + lambda_U * U_mean + lambda_L * L_buffer + lambda_T * eta_r
+        L = 1 / n_buffer_seg * (phi_mean + lambda_U * U_mean) + lambda_L * L_buffer + lambda_T * eta_r
 
     return LossResult(
         L=L,

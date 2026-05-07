@@ -1,9 +1,9 @@
 # Optimizer config — Track A (whole-line CMA-ES)
 # Select with: python run_optimize.py --opt-config default
 
-# N^B sweep range
-N_min: 5
-N_max: 12
+# N^B sweep values (descending — front-load longest leg)
+# NB_values: [14, 11, 9, 7, 5, 3]
+NB_values: [ 7 ]
 
 # Loss weights
 lambda_U: 1.00 # utilization penalty
@@ -13,6 +13,6 @@ lambda_N: 0.10 # outer N^B penalty (discourages over-segmentation)
 
 # CMA-ES settings
 popsize: 20 # population per generation
-restarts: 4 # restarts per N^B
+restarts: 3 # restarts per N^B
 n_seeds: 4 # simulation seeds per loss evaluation
-max_iter: 100 # max CMA-ES generations per restart
+max_iter: 60 # max CMA-ES generations per restart

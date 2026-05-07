@@ -96,7 +96,7 @@ def main():
     with open(out_dir / "run_info.yaml", "w") as f:
         yaml.dump(run_info, f, default_flow_style=False)
 
-    nb_range = range(opt_cfg["N_min"], opt_cfg["N_max"] + 1)
+    nb_range = opt_cfg["NB_values"]
     inner_results: dict[int, InnerResult] = {}
     t_wall_start = time.time()
 
