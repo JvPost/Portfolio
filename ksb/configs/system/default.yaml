@@ -22,7 +22,7 @@ gamma: 0.
 solver: scurve
 L_buffer: 3
 n_buffer_seg: 6
-eta_v: 1.3 # kinematic headroom: v^{BR} = eta_v * v_d
+eta_v: 1.8 # kinematic headroom: v^{BR} = eta_v * v_d
 
 v_min: 0.0 # planner-imposed velocity floor (m/s); 0 means no floor
 start_margin: 1 # the fraction of the input length, that must be on the buffer, before buffer control may commence.
@@ -34,5 +34,5 @@ n_reg_seg: 1
 
 # downstream
 L_downstream: 2.0
-eta_s: 1.8 # slot_length = eta_s * input_length
+eta_s: 1.5 # slot_length = eta_s * input_length
 eta_r: 1.1 # slot_rate   = eta_r * arrival_rate_ppm

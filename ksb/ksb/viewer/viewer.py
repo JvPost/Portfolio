@@ -92,9 +92,7 @@ class KSBViewer:
     speed : float
         Initial playback multiplier (default 1.0)
     ppm : int
-        Pixels per metre for rendering (default 120)
-    events : SegmentEvents, optional
-        Segment event times and kinematics (enables W-based segment overlap coloring)
+        Pixels per metre for rendering (default 100)
 
     Controls
     --------
@@ -112,7 +110,7 @@ class KSBViewer:
         result: SimulationResult,
         cfg: dict,
         speed: float = 1.0,
-        ppm: int = 120,
+        ppm: int = 100,
     ) -> None:
         self.result = result
         self.cfg    = cfg
