@@ -119,7 +119,7 @@ class KSBSimulation:
 
 
 
-    def run(self, seed: Optional[int] = None, *, skip_pair_records: bool = False) -> SimulationResult:
+    def run(self, seed: Optional[int] = None, *, skip_pair_records: bool = True) -> SimulationResult:
         vu, vd = self.vu, self.vd
         L_upstream, L_downstream = self.L_upstream, self.L_downstream
         L_buffer_ctrl, L_upstream_ctrl = self.L_buffer_ctrl, self.L_upstream_ctrl
@@ -297,7 +297,7 @@ class KSBSimulation:
             skip_indices=skip_indices,
             phi_u=phi_u,
             phi_0=phi_0,
-            composite_trajectories=total_trajectories,
+            system_trajectories=total_trajectories,
             buffer_trajectories=buffer_trajectories,
             pair_records=pairs,
             segment_events=segment_events,

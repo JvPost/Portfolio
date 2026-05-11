@@ -19,7 +19,7 @@ class SimulationResult:
     skip_indices: np.ndarray
     phi_u: np.ndarray
     phi_0: np.ndarray
-    composite_trajectories: List[CompositeTrajectory]
+    system_trajectories: List[CompositeTrajectory]
     buffer_trajectories: List[TrajectoryProfile]
     pair_records: List[PairRecord]
     segment_events: Optional[object] = None  # SegmentEvents if batch >= 2, else None

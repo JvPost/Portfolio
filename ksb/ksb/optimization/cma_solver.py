@@ -177,6 +177,7 @@ def solve_inner(
     lambda_U: float,
     lambda_L: float,
     lambda_T: float,
+    lambda_N: float,
     bounds: dict[str, tuple[float, float]] | None = None,
     popsize: int = 20,
     max_iter: int = 100,
@@ -225,6 +226,7 @@ def solve_inner(
                 lambda_U=lambda_U,
                 lambda_L=lambda_L,
                 lambda_T=lambda_T,
+                lambda_N=lambda_N,
                 seeds=loss_seeds,
             )
             result = lr.L
@@ -344,6 +346,7 @@ def solve_inner(
             lambda_U=lambda_U,
             lambda_L=lambda_L,
             lambda_T=lambda_T,
+            lambda_N=lambda_N,
             seeds=loss_seeds,
         )
     except Exception:

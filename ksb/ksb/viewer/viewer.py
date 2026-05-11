@@ -157,7 +157,7 @@ class KSBViewer:
         t_spawn = np.asarray(result.t_spawn, dtype=float)
         self.t_begin = float(t_spawn[0])
         self.t_end   = float(max(
-            t_spawn[i] + result.composite_trajectories[i].T
+            t_spawn[i] + result.system_trajectories[i].T
             for i in range(len(t_spawn))
         ))
 
@@ -468,7 +468,7 @@ class KSBViewer:
         X: List[Optional[float]]     = [None] * n
 
         # First pass: positions
-        for i, traj in enumerate(result.composite_trajectories):
+        for i, traj in enumerate(result.system_trajectories):
             t_local = t - t_spawn[i]
             if t_local < 0.0 or t_local > traj.T:
                 continue

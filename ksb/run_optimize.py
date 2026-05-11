@@ -112,6 +112,7 @@ def main():
             lambda_U=opt_cfg["lambda_U"],
             lambda_L=opt_cfg["lambda_L"],
             lambda_T=opt_cfg["lambda_T"],
+            lambda_N=opt_cfg['lambda_N'],
             popsize=opt_cfg["popsize"],
             max_iter=opt_cfg["max_iter"],
             n_restarts=opt_cfg["restarts"],

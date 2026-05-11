@@ -38,6 +38,7 @@ def compute_loss(
     lambda_U: float,
     lambda_L: float,
     lambda_T: float,
+    lambda_N: float,
     n_seeds: int = 1,
     seeds: Sequence[int] | None = None,
 ) -> LossResult:
@@ -104,7 +105,7 @@ def compute_loss(
     if sentinel:
         L = float("inf")
     else:
-        L = 1 / n_buffer_seg * (phi_mean + lambda_U * U_mean) + lambda_L * L_buffer + lambda_T * eta_r
+        L = 1 / n_buffer_seg * (phi_mean + lambda_U * U_mean) + lambda_L * L_buffer + lambda_T * eta_r + lambda_N * n_buffer_seg
 
     return LossResult(
         L=L,

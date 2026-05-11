@@ -126,7 +126,7 @@ class InputPlotter:
 
         for i in range(N):
             # Segments: [0]=upstream, [1]=buffer, [2]=straddle, [3]=registrar, [4]=downstream
-            segs = result.composite_trajectories[i + i_start].segments
+            segs = result.system_trajectories[i + i_start].segments
             buff_traj = segs[1]
             straddle_traj = segs[2]
             reg_traj = segs[3]
@@ -214,8 +214,8 @@ class InputPlotter:
                 t_follow = np.linspace(pr.t_start, pr.t_end, n_samples)
                 t_lead = t_follow + pr.delta_t
 
-                comp_lead = result.composite_trajectories[i]
-                comp_follow = result.composite_trajectories[i + 1]
+                comp_lead = result.system_trajectories[i]
+                comp_follow = result.system_trajectories[i + 1]
 
                 p_lead = comp_lead.eval(t_lead)[P]
                 p_follow = comp_follow.eval(t_follow)[P]
