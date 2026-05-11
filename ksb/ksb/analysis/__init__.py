@@ -1,13 +1,6 @@
-from ksb.analysis.cost import (
-    BBCostResult,
-    compute_C_bb,
-    compute_Phi_bb,
-    compute_S_bb,
-)
+from ksb.analysis.events import SegmentEvents, compute_segment_events
 
 __all__ = [
-    "BBCostResult",
-    "compute_C_bb",
-    "compute_Phi_bb",
-    "compute_S_bb",
+    "SegmentEvents",
+    "compute_segment_events",
 ]

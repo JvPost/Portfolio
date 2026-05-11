@@ -40,8 +40,6 @@ def _result_to_dict(r: InnerResult) -> dict:
         "n_buffer_seg": r.n_buffer_seg,
         "theta_star": r.theta_star,
         "L_star": r.L_star,
-        "phi_sum_star": r.phi_sum_star,
-        "U_sum_star": r.U_sum_star,
         "L_buffer_star": r.L_buffer_star,
         "eta_r_star": r.eta_r_star,
         "sentinel": r.sentinel,
@@ -109,14 +107,9 @@ def main():
         r = solve_inner(
             n_buffer_seg=nb,
             base_cfg=base_cfg,
-            lambda_U=opt_cfg["lambda_U"],
-            lambda_L=opt_cfg["lambda_L"],
-            lambda_T=opt_cfg["lambda_T"],
-            lambda_N=opt_cfg['lambda_N'],
             popsize=opt_cfg["popsize"],
             max_iter=opt_cfg["max_iter"],
             n_restarts=opt_cfg["restarts"],
-            n_seeds_loss=opt_cfg["n_seeds"],
             seed=0,
         )
         dt = time.time() - t0
@@ -129,8 +122,7 @@ def main():
         ts = r.theta_star
         print(
             f"  NB={nb:02d}  L*={r.L_star:.4f}  L_B*={ts['L_buffer']:.2f}"
-            f"  eta_v*={ts['eta_v']:.2f}  beta*={ts['beta']:.2f}"
-            f"  gamma*={ts['gamma']:.2f}  eta_s*={ts['eta_s']:.2f}"
+            f"  eta_v*={ts['eta_v']:.2f}  eta_s*={ts['eta_s']:.2f}"
             f"  eta_r*={ts['eta_r']:.2f}  evals={r.n_evals}  conv={r.converged}"
             f"  ({dt:.1f}s)"
         )

@@ -2,17 +2,15 @@
 """Launch the KSB pygame viewer.
 
 Usage:
-    python run_viewer.py [--seed INT] [--config NAME] [--with-analysis]
+    python run_viewer.py [--seed INT] [--config NAME]
 """
 import argparse
 from pathlib import Path
 
-import numpy as np
 import yaml
 
 from ksb.simulation.ksb_simulation import KSBSimulation
 from ksb.viewer.viewer import KSBViewer
-from ksb.analysis.cost import compute_C_bb, compute_S_bb
 
 _CONFIG_DIR = Path(__file__).parent / "configs" / "system"
 
@@ -35,15 +33,9 @@ def main():
     result = KSBSimulation(cfg=cfg).run(seed=args.seed)
     print(f"  assigned_slots : {result.assigned_slots}")
     print(f"  skip_indices   : {result.skip_indices}")
-    
-    events = result.segment_events
-    cost = compute_C_bb(events, float(cfg.get("jmax", 50.0)))
-    slack = compute_S_bb(events, float(cfg.get("jmax", 50.0)))
 
-    print(f"  violations     : {np.sum(slack < 0)}")
     print("Launching viewer…  SPACE to start, ESC to quit.")
-
-    KSBViewer(result, cfg, events=events, cost=cost).run()
+    KSBViewer(result, cfg).run()
 
 
 if __name__ == "__main__":

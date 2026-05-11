@@ -13,8 +13,6 @@ from dataclasses import dataclass, field
 import numpy as np
 import cma
 
-from ksb.optimization.loss import compute_loss, LossResult
-
 log = logging.getLogger(__name__)
 
 
@@ -35,8 +33,6 @@ class InnerResult:
     n_buffer_seg: int
     theta_star: dict             # named optimal params
     L_star: float                # best loss across restarts
-    phi_sum_star: float
-    U_sum_star: float
     L_buffer_star: float
     eta_r_star: float
     sentinel: bool
@@ -148,20 +144,12 @@ def _project_to_feasibility(
     # between the projector and the sim's vd computation.
     vd_sim = (eta_r * r_u) * (eta_s * l)
 
-    # Step 1: project eta_s if (eta_r, eta_s) is in the bad wedge.
-    # Condition uses vd_sim (not a separate vmax_budget expression) so the wedge
-    # check and the step-2 eta_v_max use the same arithmetic path — preventing the
-    # case where a different fp expression misses the wedge and step 2 then
-    # produces eta_v_max < 1.
     if vd_sim > V_max:
         eta_s = V_max / ((eta_r * r_u) * l)
         theta[2] = eta_s
-        # Recompute and clamp: the clip arithmetic can overshoot V_max by ~1 ULP.
         vd_sim = min((eta_r * r_u) * (eta_s * l), V_max)
         event = "step1"
 
-    # Step 2: project eta_v.
-    # vd_sim <= V_max here, so eta_v_max >= 1.
     eta_v_max = V_max / vd_sim
     if eta_v > eta_v_max:
         theta[3] = eta_v_max
@@ -170,19 +158,23 @@ def _project_to_feasibility(
     return theta, event
 
 
+def _objective(cfg: dict, n_buffer_seg: int) -> float:
+    """Cost function to minimize. Replace with a concrete implementation."""
+    raise NotImplementedError(
+        "No cost function defined. Implement _objective or pass a callable "
+        "to solve_inner before running optimization."
+    )
+
+
 def solve_inner(
     n_buffer_seg: int,
     base_cfg: dict,
     *,
-    lambda_U: float,
-    lambda_L: float,
-    lambda_T: float,
-    lambda_N: float,
+    objective_fn=None,
     bounds: dict[str, tuple[float, float]] | None = None,
     popsize: int = 20,
     max_iter: int = 100,
     n_restarts: int = 4,
-    n_seeds_loss: int = 4,
     seed: int = 0,
 ) -> InnerResult:
     """CMA-ES on theta_c for fixed N^B. Multi-restart, returns best across restarts.
@@ -190,12 +182,18 @@ def solve_inner(
     Optimizes in the unit cube [0,1]^d with sigma0=0.25 (isotropic).  Physical-unit
     bounds are used only to map to/from unit space; the optimizer sees [0,1] for
     every coordinate.
+
+    Parameters
+    ----------
+    objective_fn : callable(cfg) -> float, optional
+        Cost function. Must accept a cfg dict and return a scalar loss. If None,
+        raises NotImplementedError when the optimizer tries to evaluate.
     """
     resolved_bounds = _build_bounds(n_buffer_seg, base_cfg, bounds)
 
     lower = np.array([resolved_bounds[k][0] for k in _THETA_KEYS])
     upper = np.array([resolved_bounds[k][1] for k in _THETA_KEYS])
-    sigma0 = 0.25   # one quarter of the unit-cube axis; isotropic by construction
+    sigma0 = 0.25
     unit_lo = [0.0] * len(_THETA_KEYS)
     unit_hi = [1.0] * len(_THETA_KEYS)
 
@@ -203,11 +201,9 @@ def solve_inner(
     l = float(base_cfg.get("input_length", 0.32))
     V_max = float(base_cfg.get("Vmax", 3.0))
 
-    loss_seeds = list(range(n_seeds_loss))
-
     t_inner_start = time.perf_counter()
-    log.info("NB=%d  starting solve_inner  (popsize=%d  max_iter=%d  restarts=%d  seeds=%d)",
-             n_buffer_seg, popsize, max_iter, n_restarts, n_seeds_loss)
+    log.info("NB=%d  starting solve_inner  (popsize=%d  max_iter=%d  restarts=%d)",
+             n_buffer_seg, popsize, max_iter, n_restarts)
 
     _eval_count = [0]
     _eval_t_accum = [0.0]
@@ -221,15 +217,10 @@ def solve_inner(
         cfg = _theta_to_cfg(theta, base_cfg, n_buffer_seg)
         t0 = time.perf_counter()
         try:
-            lr = compute_loss(
-                cfg,
-                lambda_U=lambda_U,
-                lambda_L=lambda_L,
-                lambda_T=lambda_T,
-                lambda_N=lambda_N,
-                seeds=loss_seeds,
-            )
-            result = lr.L
+            fn = objective_fn if objective_fn is not None else _objective
+            result = fn(cfg)
+        except NotImplementedError:
+            raise
         except Exception as exc:
             exc_type = type(exc).__name__
             _exc_counts[exc_type] += 1
@@ -326,7 +317,6 @@ def solve_inner(
             best_L = result_L
             best_theta = result_x
 
-    # Evaluate best_theta to get full loss breakdown
     log.info("NB=%d  all restarts done  total_evals=%d  best_L=%.4f  elapsed=%.0fs",
              n_buffer_seg, total_evals, best_L,
              time.perf_counter() - t_inner_start)
@@ -340,33 +330,15 @@ def solve_inner(
                  n_buffer_seg, summary, sum(_proj_counts.values()), total_evals)
 
     best_cfg = _theta_to_cfg(best_theta, base_cfg, n_buffer_seg)
-    try:
-        final_lr = compute_loss(
-            best_cfg,
-            lambda_U=lambda_U,
-            lambda_L=lambda_L,
-            lambda_T=lambda_T,
-            lambda_N=lambda_N,
-            seeds=loss_seeds,
-        )
-    except Exception:
-        final_lr = LossResult(
-            L=best_L, phi_sum=float("nan"), U_sum=float("nan"),
-            L_buffer=float(best_theta[0]), eta_r=float(best_theta[1]),
-            sentinel=True, per_seed=[],
-        )
-
     theta_star = {k: float(v) for k, v in zip(_THETA_KEYS, best_theta)}
 
     return InnerResult(
         n_buffer_seg=n_buffer_seg,
         theta_star=theta_star,
-        L_star=final_lr.L,
-        phi_sum_star=final_lr.phi_sum,
-        U_sum_star=final_lr.U_sum,
-        L_buffer_star=final_lr.L_buffer,
-        eta_r_star=final_lr.eta_r,
-        sentinel=final_lr.sentinel,
+        L_star=best_L,
+        L_buffer_star=float(best_theta[0]),
+        eta_r_star=float(best_theta[1]),
+        sentinel=not np.isfinite(best_L),
         converged=converged,
         n_evals=total_evals,
         traces=traces,

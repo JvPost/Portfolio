@@ -8,12 +8,10 @@ import argparse
 import json
 from pathlib import Path
 
-import numpy as np
 import yaml
 
 from ksb.simulation.ksb_simulation import KSBSimulation
 from ksb.viewer.viewer import KSBViewer
-from ksb.analysis.cost import compute_C_bb, compute_S_bb
 
 
 def _load_best(run_dir: Path) -> tuple[dict, dict]:
@@ -34,7 +32,7 @@ def _load_best(run_dir: Path) -> tuple[dict, dict]:
     theta = best_inner["theta_star"]
     cfg = {**system_cfg}
     cfg["n_buffer_seg"] = best_inner["n_buffer_seg"]
-    cfg.update({k: theta[k] for k in ("L_buffer", "beta", "gamma", "eta_r", "eta_s", "eta_v") if k in theta})
+    cfg.update({k: theta[k] for k in ("L_buffer", "eta_r", "eta_s", "eta_v") if k in theta})
     return cfg, theta
 
 
@@ -49,23 +47,16 @@ def main() -> None:
     cfg, theta = _load_best(run_dir)
 
     nb  = cfg["n_buffer_seg"]
-    bet = theta.get("beta",  0.0)
-    gam = theta.get("gamma", 0.0)
     print(f"Run dir : {run_dir}")
-    print(f"NB={nb}  beta={bet:.4f}  gamma={gam:.4f}  L_buffer={cfg['L_buffer']:.4f}")
+    print(f"NB={nb}  L_buffer={cfg['L_buffer']:.4f}")
     print(f"solver={cfg.get('solver','?')}  seed={args.seed}  batch={cfg['batch']}")
 
     result = KSBSimulation(cfg=cfg).run(seed=args.seed)
     print(f"  assigned_slots : {result.assigned_slots}")
     print(f"  skip_indices   : {result.skip_indices}")
-
-    events = result.segment_events
-    cost   = compute_C_bb(events, float(cfg.get("jmax", 50.0)))
-    slack  = compute_S_bb(events, float(cfg.get("jmax", 50.0)))
-    print(f"  violations     : {np.sum(slack < 0)}")
     print("Launching viewer…  SPACE to start, ESC to quit.")
 
-    KSBViewer(result, cfg, speed=args.speed, events=events, cost=cost).run()
+    KSBViewer(result, cfg, speed=args.speed).run()
 
 
 if __name__ == "__main__":

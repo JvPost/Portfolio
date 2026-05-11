@@ -19,7 +19,6 @@ from ksb.simulation.utils import belt_lengths
 
 if TYPE_CHECKING:
     from ksb.analysis.events import SegmentEvents
-    from ksb.analysis.cost import BBCostResult
 
 # Built-in font bundled with pygame (no system font lookup needed)
 _FONT_PATH = os.path.join(os.path.dirname(pygame.__file__), "freesansbold.ttf")
@@ -81,7 +80,7 @@ class KSBViewer:
 
     Usage::
 
-        viewer = KSBViewer(result, cfg, speed=1.0, ppm=120, events=None, cost=None)
+        viewer = KSBViewer(result, cfg, speed=1.0, ppm=120, events=None)
         viewer.run()
 
     Parameters
@@ -95,9 +94,7 @@ class KSBViewer:
     ppm : int
         Pixels per metre for rendering (default 120)
     events : SegmentEvents, optional
-        Segment event times and kinematics (enables segment coloring)
-    cost : BBCostResult, optional
-        Bang-bang cost analysis (enables segment coloring)
+        Segment event times and kinematics (enables W-based segment overlap coloring)
 
     Controls
     --------
@@ -116,15 +113,12 @@ class KSBViewer:
         cfg: dict,
         speed: float = 1.0,
         ppm: int = 120,
-        events: Optional[SegmentEvents] = None,
-        cost: Optional[BBCostResult] = None,
     ) -> None:
         self.result = result
         self.cfg    = cfg
         self.speed  = float(speed)
         self.ppm    = int(ppm)
-        self.events = events
-        self.cost   = cost
+        self.events = result.segment_events
 
         # ------------------------------------------------------------------
         # Physical dimensions from cfg
@@ -211,49 +205,27 @@ class KSBViewer:
     def _compute_segment_colors(self, t: float) -> dict:
         """Per-segment color for buffer segments at time t.
 
-        Two severity levels, each with a live and a persisted phase:
-          - overlap  (W[i,k] < 0)       : physical collision on segment k
-          - budget   (C[i,k] > W[i,k])  : correction didn't fit in window
-        Overlap implies budget (strictly more severe); overlap wins ties.
+        Colors segments where W[i,k] < 0 (physical overlap — the leader's trailing
+        edge has not yet cleared the segment when the follower's leading edge arrives).
 
         Phases per pair-segment:
           live      : t in [min(t_out, t_in), max(t_out, t_in)]
-                      — the pair is straddling k.
-          persisted : t in (max(t_out, t_in), t_out[i+1, k]]
-                      — the pair has left k, but the next pair hasn't
-                      claimed it yet. We keep the error visible so viewers
-                      don't miss the moment.
-
-        Aggregation priority (highest → lowest):
-          1. overlap live
-          2. budget live
-          3. overlap persisted
-          4. budget persisted
-          5. (no entry → BUFFER_COLOR)
-        Severity outranks phase: a lingering overlap is worse than a live
-        budget-miss, because overlap is a physical collision while budget-
-        miss is a soft missed correction that might be absorbed downstream.
+          persisted : t in (max(t_out, t_in), t_out[i+1, k]] — kept visible until
+                      the next pair claims the segment.
         """
-        if self.events is None or self.cost is None:
+        if self.events is None:
             return {}
 
-        t_out = self.events.t_out            # (n_pairs, N_B)
-        t_in  = self.events.t_in             # (n_pairs, N_B)
-        W     = self.events.W                # = t_in - t_out
-        C     = self.cost.C                  # (n_pairs, N_B)
+        t_out = self.events.t_out   # (n_pairs, N_B)
+        t_in  = self.events.t_in   # (n_pairs, N_B)
+        W     = self.events.W      # = t_in - t_out
 
         n_pairs, N_B = t_out.shape
+        overlap = W < 0.0
 
-        # Severity masks (per pair-segment, time-independent)
-        overlap = W < 0.0                    # physical collision
-        budget  = (C > W) & ~overlap         # soft budget miss
-
-        # Co-residence interval bounds
         lo = np.minimum(t_out, t_in)
         hi = np.maximum(t_out, t_in)
 
-        # Persistence cap: t_out of the NEXT pair on the same segment.
-        # For i == n_pairs - 1 there is no next pair → cap = +inf.
         next_cap = np.full_like(t_out, np.inf)
         if n_pairs >= 2:
             next_cap[:-1, :] = t_out[1:, :]
@@ -261,21 +233,14 @@ class KSBViewer:
         live      = (lo <= t) & (t <= hi)
         persisted = (t > hi) & (t <= next_cap)
 
-        # Priority stacking: paint in reverse priority order so highest
-        # priority overwrites. Build a dict of segment → color.
         colors: dict = {}
 
         def _paint(mask_2d: np.ndarray, color: tuple) -> None:
-            # mask_2d shape (n_pairs, N_B). Color segment k if any pair
-            # contributes at this priority level.
             hit = mask_2d.any(axis=0)
             for k in np.flatnonzero(hit).tolist():
                 colors[k] = color
 
-        # Apply in order of ASCENDING priority so higher priorities overwrite.
-        _paint(persisted & budget,  _blend_50(ITEM_RED_BUDGET,  BUFFER_COLOR))
         _paint(persisted & overlap, _blend_50(ITEM_RED_OVERLAP, BUFFER_COLOR))
-        _paint(live      & budget,  ITEM_RED_BUDGET)
         _paint(live      & overlap, ITEM_RED_OVERLAP)
 
         return colors
