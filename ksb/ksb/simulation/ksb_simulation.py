@@ -5,6 +5,7 @@ from typing import List, Optional
 import numpy as np
 
 from ksb.analysis.events import compute_segment_events
+from ksb.analysis.sync_response import SegmentSyncResponse
 from ksb.control.registrar import RegistrarProfile
 from ksb.control.upstream_control import ConstantVelocityControl, UpstreamController, PreAccelerateControl
 from ksb.motion.item_pair import PairRecord, compute_pairs
@@ -21,7 +22,7 @@ class KSBSimulation:
     Receives stochastic item arrivals and plans jerk-limited trajectories to
     deliver each item to a fixed, deterministic slot schedule.
     """
-    def __init__(self, cfg: dict) -> None:
+    def __init__(self, cfg: dict, upstream_control:str = "acc") -> None:
         self.cfg = cfg
         self.solver_name = cfg.get("solver", "")
         self.solver = utils.get_solver_from_name(self.solver_name)
@@ -87,7 +88,7 @@ class KSBSimulation:
         
 
         # bounds as numpy array: [j_max, A_max, V_max, gap_min]
-        self.bounds = np.array([
+        self.input_bounds = np.array([
             self.jmax,
             self.Amax,
             self.Vmax,
@@ -99,13 +100,18 @@ class KSBSimulation:
         self.j_u_max = float(cfg.get('j_u_max', 100.))
         self.a_u_max = float(cfg.get('a_u_max', 2.0))
         self.v_u_max = float(cfg.get('v_u_max', 2.0))
-        # self._u_control = ConstantVelocityControl(self.vu)
-        self._u_control = PreAccelerateControl(vu = self.vu, 
-                                               j_u_max = self.j_u_max,
-                                               a_max = self.Amax, 
-                                               a_u_max = self.a_u_max,
-                                               v_u_max= self.v_u_max,
-                                               )
+
+        if (upstream_control == "acc"):
+            self._u_control = PreAccelerateControl(vu = self.vu, 
+                                                j_u_max = self.j_u_max,
+                                                a_max = self.Amax, 
+                                                a_u_max = self.a_u_max,
+                                                v_u_max= self.v_u_max,
+                                                )
+        elif (upstream_control == "constant"):
+            self._u_control = ConstantVelocityControl(self.vu)
+        else:
+            raise KeyError("Unknown upstream control")
                                                
         self._d_solver = LinearTrajectorySolver()
         self._registrar = RegistrarProfile(
@@ -124,7 +130,7 @@ class KSBSimulation:
         L_upstream, L_downstream = self.L_upstream, self.L_downstream
         L_buffer_ctrl, L_upstream_ctrl = self.L_buffer_ctrl, self.L_upstream_ctrl
         slot_period = self.slot_period
-        bounds, policy = self.bounds, self.policy
+        bounds, policy = self.input_bounds, self.policy
         
         x0_upstream = np.array([0.0, vu, 0.0])
 
@@ -145,12 +151,7 @@ class KSBSimulation:
         buffer_trajectories:List[TrajectoryProfile] = []
         upstream_ctrl_trajectories:List[TrajectoryProfile] = []
 
-        __upstream_ctrl_traj = self._u_control.subsection(.0, L_upstream_ctrl)
-        __T_upstream = __upstream_ctrl_traj.T
-        __vf_upstream = __upstream_ctrl_traj.eval(__T_upstream)[V]
-        # slot_idx = int((__T_upstream + self.L_buffer_ctrl / __vf_upstream) // slot_period)
         slot_idx = 0
-
         prev_slot_idx = None
         
         # Upstream control & slot assignments, which also computes buffer trajectory.
@@ -164,7 +165,7 @@ class KSBSimulation:
 
             slot_idx, buffer_traj = utils.get_next_slot(
                 i, t_in, slot_idx, self.slot_length,
-                v_in, self.v_buff_out, L_buffer_ctrl, self.bounds,
+                v_in, self.v_buff_out, L_buffer_ctrl, self.input_bounds,
                 self.policy, self.solver,
                 t_offset=t_offset,
                 vd_slot=self.vd,
@@ -236,6 +237,7 @@ class KSBSimulation:
         # 6) segment events
         #
         segment_events = None
+        segment_sync_response = None
         if self.batch > 1:
             segment_events = compute_segment_events(
                 total_trajectories=total_trajectories,
@@ -244,6 +246,12 @@ class KSBSimulation:
                 L_upstream=L_upstream,
                 Ls=self.Ls,
             )
+
+            a_max_sync = self.cfg['a_max_sync']
+            j_max_sync = self.cfg['j_max_sync']
+            bounds = np.array([a_max_sync, j_max_sync])
+            segment_sync_response = SegmentSyncResponse(segment_events, bounds)
+
 
         
         # time computation such that we also keep track of inputs in buffer when 
@@ -301,4 +309,5 @@ class KSBSimulation:
             buffer_trajectories=buffer_trajectories,
             pair_records=pairs,
             segment_events=segment_events,
+            segment_sync_response=segment_sync_response,
         )

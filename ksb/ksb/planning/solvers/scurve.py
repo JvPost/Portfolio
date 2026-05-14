@@ -39,7 +39,6 @@ class SCurveSolver(IProfileSolver):
     # ------------------------------------------------------------------
     # Feasibility window
     # ------------------------------------------------------------------
-
     def feasibility_window(
         self, pi, vi, pf, vf, bounds, policy
     ) -> tuple[float, float]:

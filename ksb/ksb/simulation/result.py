@@ -23,3 +23,4 @@ class SimulationResult:
     buffer_trajectories: List[TrajectoryProfile]
     pair_records: List[PairRecord]
     segment_events: Optional[object] = None  # SegmentEvents if batch >= 2, else None
+    segment_sync_response: Optional[object] = None
