@@ -22,7 +22,7 @@ class KSBSimulation:
     Receives stochastic item arrivals and plans jerk-limited trajectories to
     deliver each item to a fixed, deterministic slot schedule.
     """
-    def __init__(self, cfg: dict, upstream_control:str = "acc") -> None:
+    def __init__(self, cfg: dict) -> None:
         self.cfg = cfg
         self.solver_name = cfg.get("solver", "")
         self.solver = utils.get_solver_from_name(self.solver_name)
@@ -101,6 +101,7 @@ class KSBSimulation:
         self.a_u_max = float(cfg.get('a_u_max', 2.0))
         self.v_u_max = float(cfg.get('v_u_max', 2.0))
 
+        upstream_control = cfg.get('upstream_control', 'acc')
         if (upstream_control == "acc"):
             self._u_control = PreAccelerateControl(vu = self.vu, 
                                                 j_u_max = self.j_u_max,
@@ -252,39 +253,37 @@ class KSBSimulation:
             bounds = np.array([a_max_sync, j_max_sync])
             segment_sync_response = SegmentSyncResponse(segment_events, bounds)
 
-
-        
-        # time computation such that we also keep track of inputs in buffer when 
-        # input $i$ already entered buffer, but $i+1$ has not. 
-        p_window_start = L_upstream
-        p_window_end = L_upstream + self.L_buffer + self.L_reg + self.input_length
-
-        t_i_boundary_upstream_buffer = np.array(
-            [traj.find_time_at_position(p_window_start) for traj in total_trajectories]
-            )
-
-        input_delta_t = np.diff(batch_t_spawn + t_i_boundary_upstream_buffer) 
-        
-        # Relative time windows for i and j = i+1. We start keeping track of time
-        # when input j enters the buffer. 
-        t_j_window_start = np.array(t_i_boundary_upstream_buffer[1:])
-
-        # We stop keeping track of time when input i's trailing edge leaves the buffer (p_window_end)
-        # Since local time start with input $j$ and ends with a position for input $i$,
-        # we have to substract the relative time difference.
-        t_j_window_end   = np.array(
-            [traj.find_time_at_position(p_window_end) for traj in total_trajectories[:-1]]
-        ) - input_delta_t
-
-        # 7) pair record
-        # Check some of the logic. 
-        assert np.all(t_j_window_end <= np.array([traj.T for traj in total_trajectories[1:]])), \
-            "t_window_end exceeds follower trajectory duration — overtake detected"
-        assert np.all(t_j_window_end > t_j_window_start), \
-            "t_window_end <= t_window_start — degenerate or inverted window"
-
         pairs: List[PairRecord] = []
         if self.batch > 1 and not skip_pair_records:
+            # time computation such that we also keep track of inputs in buffer when 
+            # input $i$ already entered buffer, but $i+1$ has not. 
+            p_window_start = L_upstream
+            p_window_end = L_upstream + self.L_buffer + self.L_reg + self.input_length
+
+            t_i_boundary_upstream_buffer = np.array(
+                [traj.find_time_at_position(p_window_start) for traj in total_trajectories]
+                )
+
+            input_delta_t = np.diff(batch_t_spawn + t_i_boundary_upstream_buffer) 
+            
+            # Relative time windows for i and j = i+1. We start keeping track of time
+            # when input j enters the buffer. 
+            t_j_window_start = np.array(t_i_boundary_upstream_buffer[1:])
+
+            # We stop keeping track of time when input i's trailing edge leaves the buffer (p_window_end)
+            # Since local time start with input $j$ and ends with a position for input $i$,
+            # we have to substract the relative time difference.
+            t_j_window_end   = np.array(
+                [traj.find_time_at_position(p_window_end) for traj in total_trajectories[:-1]]
+            ) - input_delta_t
+
+            # 7) pair record
+            # Check some of the logic. 
+            assert np.all(t_j_window_end <= np.array([traj.T for traj in total_trajectories[1:]])), \
+                "t_window_end exceeds follower trajectory duration — overtake detected"
+            assert np.all(t_j_window_end > t_j_window_start), \
+                "t_window_end <= t_window_start — degenerate or inverted window"
+
             pairs = compute_pairs(
                 trajectories=total_trajectories,
                 delta_t=input_delta_t,

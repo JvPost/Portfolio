@@ -7,6 +7,7 @@ import numpy as np
 
 from ksb.motion.item_pair import PairRecord
 from ksb.motion.trajectories import CompositeTrajectory, TrajectoryProfile
+from ksb.analysis import SegmentEvents, SegmentSyncResponse
 
 
 @dataclass(frozen=True)
@@ -22,5 +23,5 @@ class SimulationResult:
     system_trajectories: List[CompositeTrajectory]
     buffer_trajectories: List[TrajectoryProfile]
     pair_records: List[PairRecord]
-    segment_events: Optional[object] = None  # SegmentEvents if batch >= 2, else None
-    segment_sync_response: Optional[object] = None
+    segment_events: Optional[SegmentEvents] = None  # SegmentEvents if batch >= 2, else None
+    segment_sync_response: Optional[SegmentSyncResponse] = None

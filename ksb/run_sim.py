@@ -90,6 +90,15 @@ def main():
         if len(avg_margins) > 0:
             print(f"  Mean average margin        : {avg_margins.mean():.4f} m")
 
+    if (result.segment_sync_response):
+        print()
+        print("=== Segment boundary events (i, k) ===")
+         
+        n_violating = result.segment_events.W < 0
+        n_feasible = result.segment_sync_response.feasible
+        size = n_feasible.size
+        print(f"fraction violations: {np.sum(n_violating) / size}")
+        print(f"fraction feasible events: {np.sum(n_feasible) / size}")
 
 if __name__ == "__main__":
     main()

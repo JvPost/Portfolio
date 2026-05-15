@@ -36,3 +36,7 @@ n_reg_seg: 1
 L_downstream: 2.0
 eta_s: 1.5 # slot_length = eta_s * input_length
 eta_r: 1.1 # slot_rate   = eta_r * arrival_rate_ppm
+
+# \pi^S bounds
+a_max_sync: 25.0
+j_max_sync: 300

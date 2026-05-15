@@ -10,6 +10,7 @@ from ksb.motion.trajectories import TrajectoryProfile
 from ksb.planning.contracts import IProfileSolver, InfeasibleError, SlotAssignmentError, Policy
 from ksb.planning.solvers.quintic import QuinticSolver
 from ksb.planning.solvers.scurve import SCurveSolver
+from ksb.planning.solvers.ruckig_solver import RuckigSolver
 
 
 def input_spawn_times(
@@ -325,5 +326,7 @@ def get_solver_from_name(n) -> IProfileSolver:
         return QuinticSolver()
     elif n == 'scurve':
         return SCurveSolver()
+    elif n == 'ruckig':
+        return RuckigSolver()
     else:
         raise NameError("unknown solver")
