@@ -136,8 +136,8 @@ class TestSegmentEvents:
         expected_shape = (batch - 1, sim.n_buffer_seg)
         assert events.t_out.shape == expected_shape
         assert events.t_in.shape == expected_shape
-        assert events.v_minus.shape == expected_shape
-        assert events.a_minus.shape == expected_shape
-        assert events.v_plus.shape == expected_shape
-        assert events.a_plus.shape == expected_shape
+        assert events.v_out.shape == expected_shape
+        assert events.a_out.shape == expected_shape
+        assert events.v_in.shape == expected_shape
+        assert events.a_in.shape == expected_shape
         assert events.W.shape == expected_shape

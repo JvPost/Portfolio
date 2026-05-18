@@ -18,10 +18,10 @@ class SegmentEvents:
     """
     t_out:    np.ndarray  # (b-1, N_B)  t leader trailing edge clears segment k exit
     t_in:     np.ndarray  # (b-1, N_B)  t follower leading edge reaches segment k entry
-    v_minus:  np.ndarray  # (b-1, N_B)  v at t_out, from leader's trajectory
-    a_minus:  np.ndarray  # (b-1, N_B)
-    v_plus:   np.ndarray  # (b-1, N_B)  v at t_in, from follower's trajectory
-    a_plus:   np.ndarray  # (b-1, N_B)
+    v_out:  np.ndarray  # (b-1, N_B)  v at t_out, from leader's trajectory
+    a_out:  np.ndarray  # (b-1, N_B)
+    v_in:   np.ndarray  # (b-1, N_B)  v at t_in, from follower's trajectory
+    a_in:   np.ndarray  # (b-1, N_B)
 
     @property
     def W(self) -> np.ndarray:
@@ -107,8 +107,8 @@ def compute_segment_events(
     return SegmentEvents(
         t_out=t_out,
         t_in=t_in,
-        v_minus=v_minus,
-        a_minus=a_minus,
-        v_plus=v_plus,
-        a_plus=a_plus,
+        v_out=v_minus,
+        a_out=a_minus,
+        v_in=v_plus,
+        a_in=a_plus,
     )
