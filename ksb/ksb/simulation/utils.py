@@ -54,7 +54,7 @@ def input_spawn_times_ar1(
     v0: float,
     mean: float = 0.60,
     std: float = 0.05,
-    phi: float = 0.5,
+    rho: float = 0.5,
     min: float = 0.30,
     seed: int = 42,
 ) -> np.ndarray:
@@ -70,7 +70,7 @@ def input_spawn_times_ar1(
         v0: infeed velocity (m/s)
         mean_gap: target mean gap (m); must be > min_gap
         target_std: desired marginal std of gapes (m)
-        phi: AR(1) autocorrelation coefficient (0 < phi < 1)
+        rho: AR(1) autocorrelation coefficient (0 < rho < 1)
         min_gap: hard lower bound on gap
         seed: random seed
 
@@ -89,7 +89,7 @@ def input_spawn_times_ar1(
     sigma_y2 = np.log(1.0 + (std / m) ** 2)
     sigma_y = np.sqrt(sigma_y2)
     mu_y = np.log(m) - sigma_y2 / 2.0
-    sigma_e = sigma_y * np.sqrt(1.0 - phi ** 2)
+    sigma_e = sigma_y * np.sqrt(1.0 - rho ** 2)
 
     rng = np.random.default_rng(seed)
     v0_safe = max(float(v0), 1e-4)
@@ -98,7 +98,7 @@ def input_spawn_times_ar1(
     y = np.empty(batch, dtype=np.float64)
     y[0] = mu_y + epsilon[0]
     for i in range(1, batch):
-        y[i] = mu_y + phi * (y[i - 1] - mu_y) + epsilon[i]
+        y[i] = mu_y + rho * (y[i - 1] - mu_y) + epsilon[i]
 
     gaps = min + np.exp(y)
     inter_times = gaps[:-1] / v0_safe

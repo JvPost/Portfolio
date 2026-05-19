@@ -5,7 +5,7 @@ from typing import List
 
 import numpy as np
 
-from ksb.motion.trajectories import CompositeTrajectory, P, V, A
+from ksb.motion.trajectories import TrajectoryProfile, P, V, A
 
 
 @dataclass
@@ -30,7 +30,7 @@ class SegmentEvents:
 
 
 def compute_segment_events(
-    total_trajectories: List[CompositeTrajectory],
+    total_trajectories: List[TrajectoryProfile],
     t_spawn: np.ndarray,              # (b,)
     input_length: float,              # uniform l_i for now
     L_upstream: float,
@@ -61,10 +61,10 @@ def compute_segment_events(
     # Initialize result arrays
     t_out = np.zeros((n_pairs, N_B))
     t_in = np.zeros((n_pairs, N_B))
-    v_minus = np.zeros((n_pairs, N_B))
-    a_minus = np.zeros((n_pairs, N_B))
-    v_plus = np.zeros((n_pairs, N_B))
-    a_plus = np.zeros((n_pairs, N_B))
+    v_in = np.zeros((n_pairs, N_B))
+    a_in = np.zeros((n_pairs, N_B))
+    v_out = np.zeros((n_pairs, N_B))
+    a_out = np.zeros((n_pairs, N_B))
 
     # Compute events for each pair and segment
     for i in range(n_pairs):
@@ -99,16 +99,16 @@ def compute_segment_events(
             state_minus = traj_lead.eval(t_i_local)  # shape (3,)
             state_plus = traj_follow.eval(t_f_local)  # shape (3,)
 
-            v_minus[i, k] = state_minus[V]
-            a_minus[i, k] = state_minus[A]
-            v_plus[i, k] = state_plus[V]
-            a_plus[i, k] = state_plus[A]
+            v_in[i, k] = state_minus[V]
+            a_in[i, k] = state_minus[A]
+            v_out[i, k] = state_plus[V]
+            a_out[i, k] = state_plus[A]
 
     return SegmentEvents(
         t_out=t_out,
         t_in=t_in,
-        v_out=v_minus,
-        a_out=a_minus,
-        v_in=v_plus,
-        a_in=a_plus,
+        v_out=v_in,
+        a_out=a_in,
+        v_in=v_out,
+        a_in=a_out,
     )

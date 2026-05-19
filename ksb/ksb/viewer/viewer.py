@@ -116,7 +116,8 @@ class KSBViewer:
         self.cfg    = cfg
         self.speed  = float(speed)
         self.ppm    = int(ppm)
-        self.events = result.segment_events
+        self.events        = result.segment_events
+        self.sync_response = result.segment_sync_response
 
         # ------------------------------------------------------------------
         # Physical dimensions from cfg
@@ -237,6 +238,11 @@ class KSBViewer:
             hit = mask_2d.any(axis=0)
             for k in np.flatnonzero(hit).tolist():
                 colors[k] = color
+
+        sync = self.sync_response
+        if sync is not None:
+            infeasible = (W >= 0.0) & (sync.kinematic_margin < 0.0)
+            _paint(live & infeasible, ITEM_RED_BUDGET)
 
         _paint(persisted & overlap, _blend_50(ITEM_RED_OVERLAP, BUFFER_COLOR))
         _paint(live      & overlap, ITEM_RED_OVERLAP)

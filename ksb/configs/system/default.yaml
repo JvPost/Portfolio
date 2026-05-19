@@ -3,7 +3,7 @@ batch: 100
 input_length: 0.32
 input_gap_mean: 0.6
 input_gap_std: 0.05
-arrival_rate_ppm: 180
+arrival_rate_ppm: 150
 
 # upstream
 upstream_control: acc
@@ -16,11 +16,10 @@ a_u_max: 0.05
 jmax: 100.0
 Vmax: 3.5
 Amax: 8.5
-beta: 0.0
-gamma: -1
+beta: 0.5
+gamma: -.5
 
 solver: ruckig
-# solver: quintic
 L_buffer: 3.0
 n_buffer_seg: 8
 eta_v: 2.20 # kinematic headroom: v^{BR} = eta_v * v_d
