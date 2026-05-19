@@ -70,6 +70,14 @@ class UpstreamController(ABC):
             elapsed = t_now - seg_t
             seg_remaining = seg_T - elapsed
 
+            if seg_remaining < 1e-9:
+                # FP drift has placed t_now at or past the segment boundary;
+                # snap forward so the next _segment_at call finds the correct
+                # segment. The skipped position contribution (< v × 1e-9 m) is
+                # absorbed into the next segment's distance budget.
+                t_now = seg_t + seg_T
+                continue
+
             x0_local = np.array([0.0, v_now, a_now])
             candidate = ConstantJerkTrajectory(x0=x0_local, T=seg_remaining, jerk=seg_j)
             dx_full = candidate.eval(seg_remaining)
