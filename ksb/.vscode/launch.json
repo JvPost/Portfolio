@@ -35,21 +35,6 @@
             "cwd": "${workspaceFolder}"
         },
         {
-            "name": "run_optimizer (debug)",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/run_optimize.py",
-            "args": [
-                "--opt-config",
-                "default",
-                "--batch",
-                "20"
-            ],
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "justMyCode": false
-        },
-        {
             "name": "Current File",
             "type": "debugpy",
             "request": "launch",
