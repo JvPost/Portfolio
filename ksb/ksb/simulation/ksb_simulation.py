@@ -165,12 +165,9 @@ class KSBSimulation:
             t_offset = -(self.input_length / self.v_buff_out + self._registrar.T_total)           
 
             slot_idx, buffer_traj = utils.get_next_slot(
-                i, t_in, slot_idx, self.slot_length,
-                v_in, self.v_buff_out, L_buffer_ctrl, self.input_bounds,
-                self.policy, self.solver,
-                t_offset=t_offset,
-                vd_slot=self.vd,
-            )
+                i, t_in, slot_idx, self.slot_length, v_in, self.v_buff_out, 
+                L_buffer_ctrl, self.input_bounds, self.policy, self.solver,
+                t_offset=t_offset, vd_slot=self.vd)
             
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1

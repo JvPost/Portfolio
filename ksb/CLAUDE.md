@@ -244,7 +244,7 @@ Runs `KSBSimulation`, then `KSBViewer(result, cfg, speed=args.speed).run()`.
 
 ---
 
-### TASK 2 — Upstream belt velocity modulation as a control intervention  [current]
+### TASK 2 — Upstream belt velocity modulation as a control intervention  [done]
 
 **Goal:** The upstream belt currently runs at constant velocity `vu`. This task
 adds an optional, deliberate velocity modulation profile to the upstream belt —
@@ -293,29 +293,7 @@ cadence to use.
 
 ---
 
-### TASK 3 — Non-zero boundary acceleration in buffer solvers  [PLANNED]
-
-**Goal:** Both `QuinticTrajectorySolver` and `SCurveSolver` assume `a0 = 0`
-and `af = 0`. Relaxing this is a prerequisite for Task 2 being fully effective:
-if the upstream belt is modulating velocity, inputs may enter the buffer with
-nonzero acceleration, and the buffer solver must handle that.
-
-**QuinticTrajectorySolver:** the 6×6 system already supports arbitrary `a0`
-and `af` — rows 3 and 6 of the matrix are the acceleration boundary conditions.
-The change is small: accept `ai=0.0` and `af=0.0` as optional parameters to
-`solve()`.
-
-**SCurveSolver:** the `_ramp()` helper ramps from `v_a` to `v_b` starting at
-`a=0`. Generalizing to arbitrary `a0` requires modifying the ramp kinematics —
-more involved, do carefully with unit tests per phase.
-
-**Design note:** the math is a straightforward shift of initial conditions on
-the triple integrator. `_ramp()` must account for existing acceleration when
-computing phase duration and displacement.
-
----
-
-### TASK 4 — Arrival model selection in KSBSimulation  [PLANNED]
+### TASK 3 — Arrival model selection in KSBSimulation  [done]
 
 **Goal:** Expose all three arrival models via cfg:
 ```python
@@ -326,20 +304,6 @@ cfg["arrival_model"] = "lognormal"   # shifted lognormal, one-sided floor
 Dispatch in `KSBSimulation.run()`. Also add a `gap_jitter` key: small
 zero-mean Gaussian noise on each input's initial velocity at buffer entry
 (models instantaneous belt speed variation, distinct from gap spacing noise).
-
----
-
-### TASK 5 — Epsilon-vs-sigma analysis  [PLANNED]
-
-**Goal:** Reproduce the epsilon-vs-sigma analysis in a clean script.
-
-- Sweep `gap_std` across a range of sigma_u values
-- For each sigma_u, run M=20 trials, compute
-  `epsilon = fraction of pairs with any gap violation`
-- Plot epsilon vs sigma_u — should show gradual rise plateauing near `1 - rho`
-- Show that `rho` is invariant to sigma_u (structural invariant)
-
-Output: `analysis/epsilon_sweep.py` producing a publication-quality figure.
 
 ---
 

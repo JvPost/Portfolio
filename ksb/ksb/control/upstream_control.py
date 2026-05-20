@@ -67,6 +67,13 @@ class UpstreamController(ABC):
             self._ensure_covered(t_now, remaining, v_now)
             seg_t, seg_j, seg_T = self._segment_at(t_now)
 
+            # Re-anchor to the authoritative timeline to prevent FP drift
+            # from compounding across segment boundaries (especially long hold
+            # phases where δa × t_hold can exceed the 1e-4 velocity tolerance).
+            x_auth = self.state_at(t_now)
+            v_now = float(x_auth[V])
+            a_now = float(x_auth[A])
+
             elapsed = t_now - seg_t
             seg_remaining = seg_T - elapsed
 
