@@ -1,10 +1,10 @@
 # input
-batch: 10
+batch: 100
 input_length: 0.32
 input_gap_mean: 0.6
 input_gap_std: 0.05
 input_gap_rho: 0.5
-arrival_rate_ppm: 180
+arrival_rate_ppm: 150
 
 # upstream
 upstream_control: acc

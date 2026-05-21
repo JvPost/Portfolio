@@ -63,9 +63,6 @@ def main():
     print(f"  φ_u  (pre-buffer, buckets) : mean={result.phi_u.mean():.3f}  "
           f"std={result.phi_u.std():.3f}  "
           f"range=[{result.phi_u.min():.3f}, {result.phi_u.max():.3f}]")
-    print(f"  φ_0  (at entry,  buckets)  : mean={result.phi_0.mean():.3f}  "
-          f"std={result.phi_0.std():.3f}  "
-          f"range=[{result.phi_0.min():.3f}, {result.phi_0.max():.3f}]")
 
     # ── Gap metrics ───────────────────────────────────────────────────────────
     if (len(result.pair_records) > 0):

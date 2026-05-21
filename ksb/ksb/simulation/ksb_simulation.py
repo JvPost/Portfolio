@@ -150,7 +150,6 @@ class KSBSimulation:
         upstream_trajectories:List[TrajectoryProfile] = []
         UB_trajectories: List[LinearTrajectory] = []
         buffer_trajectories:List[TrajectoryProfile] = []
-        
 
         slot_idx = 0
         prev_slot_idx = None
@@ -158,14 +157,21 @@ class KSBSimulation:
         # Upstream control & slot assignments, which also computes buffer trajectory.
         for i, t0 in enumerate(batch_t_spawn):
             upstream_traj:TrajectoryProfile = self._u_control.subsection(t0, L_upstream)
-            v_UB = self._u_control.state_at(upstream_traj.T)[V]
+            upstream_vf, upstream_af = upstream_traj.xf[V:]
 
-            T_UB = (-v_UB + np.sqrt(v_UB**2 + 2 * self.a_u_max * self.input_length)) / self.a_u_max
+            if (upstream_af > 0):
+                T_straddle_UB = (-upstream_vf + np.sqrt(upstream_vf**2 
+                                                        + 2 * upstream_af 
+                                                        * self.input_length)) / upstream_af
+            else: # constant velocity
+                T_straddle_UB = self.input_length / upstream_vf
+
             straddle_traj_UB = ConstantJerkTrajectory(
-                x0=np.array([0.0, v_UB, self.a_u_max]),
-                T = T_UB,
+                x0=np.array([0.0, upstream_vf, upstream_af]),
+                T = T_straddle_UB,
                 jerk=0
             )
+
             t_in = t0 + upstream_traj.T + straddle_traj_UB.T
 
             #            straddle time                         registrar time
@@ -311,7 +317,6 @@ class KSBSimulation:
             time_horizons=buffer_T_array,
             skip_indices=skip_indices,
             phi_u=phi_u,
-            phi_0=phi_0,
             system_trajectories=total_trajectories,
             buffer_trajectories=buffer_trajectories,
             pair_records=pairs,
