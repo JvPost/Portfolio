@@ -61,18 +61,20 @@ class KSBSimulation:
         self.rd = eta_r * self.ru
         assert self.rd >= self.ru, "slot rate must be >= arrival rate"
 
+        self.Q = self.rd / (self.rd - self.ru)
+
         self.vu = self.ru * self.gap_mean
         self.vd = self.rd * self.slot_length
 
         eta_v = float(cfg.get("eta_v", 1.16))  # kinematic headroom factor
         self.v_buff_out = eta_v * self.vd       # v^{BR} = eta_v * v_d
+
         _fp_atol = 1e-9  # tolerance for floating-point rounding at the constraint boundary
+
         assert self.v_buff_out >= self.vd - _fp_atol, \
             f"v_buff_out ({self.v_buff_out}) must be >= v_d ({self.vd}); eta_v >= 1"
         assert self.v_buff_out <= self.Vmax + _fp_atol, \
             f"v_buff_out ({self.v_buff_out}) exceeds Vmax ({self.Vmax}); reduce eta_v or eta_r/eta_s"
-
-        
 
         self.slot_period = self.slot_length / self.vd
 
@@ -80,10 +82,8 @@ class KSBSimulation:
 
         start_margin = float(cfg.get("start_margin", 1.0))
         end_margin = float(cfg.get("end_margin", 0.0))
-
         assert end_margin == 0.0, "non zero end_margin not implemented yet"
         self.L_upstream_ctrl = self.L_upstream + start_margin * self.input_length # The length over which usptream control active
-
         self.L_buffer_ctrl = self.L_buffer - (self.input_length * start_margin) # buffer control length
         
 
@@ -94,12 +94,13 @@ class KSBSimulation:
             self.Vmax,
             self.gap_min,
         ])
+
         v_min = float(cfg.get("v_min", 0.0))
         self.policy = Policy(input_length=self.input_length, v_min=v_min)
 
-        self.j_u_max = float(cfg.get('j_u_max', 100.))
-        self.a_u_max = float(cfg.get('a_u_max', 2.0))
-        self.v_u_max = float(cfg.get('v_u_max', 2.0))
+        self.j_u_max = self.jmax
+        self.v_u_max = self.Vmax
+        self.a_u_max = np.abs(self.Vmax - self.vu) / (self.Q * self.slot_period)
 
         upstream_control = cfg.get('upstream_control', 'acc')
         if (upstream_control == "acc"):
@@ -115,6 +116,7 @@ class KSBSimulation:
             raise KeyError("Unknown upstream control")
                                                
         self._d_solver = LinearTrajectorySolver()
+
         self._registrar = RegistrarProfile(
             v_in=self.v_buff_out,
             v_out=self.vd,
@@ -123,8 +125,6 @@ class KSBSimulation:
             j_max=self.jmax,
             a_max=self.Amax,
         )
-
-
 
     def run(self, seed: Optional[int] = None, *, skip_pair_records: bool = True) -> SimulationResult:
         vu, vd = self.vu, self.vd
