@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 from scipy.special import ndtr, ndtri
 
+from ksb.control.upstream_control import UpstreamController
 from ksb.motion.trajectories import TrajectoryProfile
 from ksb.planning.contracts import IProfileSolver, InfeasibleError, SlotAssignmentError, Policy
 from ksb.planning.solvers.quintic import QuinticSolver
@@ -221,9 +222,9 @@ def get_next_slot(
     bounds: np.ndarray,
     policy: Policy,
     solver: IProfileSolver,
-    t_offset: float = 0.0,
+    r_control: UpstreamController,
     vd_slot: Optional[float] = None,
-) -> Tuple[int, TrajectoryProfile]:
+) -> Tuple[int, TrajectoryProfile, TrajectoryProfile]:
     """Assign a single input to the earliest feasible slot index.
 
     Uses `solver.feasibility_window` to compute a slot-index range directly,
@@ -258,66 +259,40 @@ def get_next_slot(
         SlotAssignmentError: on window-empty, window-exhausted, or cap failure.
     """
     slot_period = slot_length / (vd_slot if vd_slot is not None else vf)
-    k_lo = slot_idx + 1  # must occupy a later slot than the previous input
-
-    T_min, T_max = solver.feasibility_window(0.0, vi, L_buffer_ctrl, vf, bounds, policy)
-    hint = "; improve heuristic" if idx == 0 else ""
-
-    # Sentinel: feasibility_window signals an infeasible geometry with T_min > T_max.
-    if T_min > T_max:
-        raise SlotAssignmentError(
-            f"No feasible slot for input {idx+1}: solver reports infeasible geometry "
-            f"(T_min={T_min}, T_max={T_max})" + hint
-        )
-
-    # Map T-window to k-window via the affine inverse.
-    base = (t_control_start - t_offset) / slot_period
-    k_min_window = math.ceil(base + T_min / slot_period)
-    bounded = not math.isinf(T_max)
-    k_max_window = math.floor(base + T_max / slot_period) if bounded else None
-
-    k_start = max(k_lo, k_min_window)
-
-    # Window entirely below the earliest allowable slot (only detectable when bounded).
-    if bounded and k_start > k_max_window:
-        raise SlotAssignmentError(
-            f"No feasible slot for input {idx+1}: "
-            f"window [k_min={k_min_window}, k_max={k_max_window}] "
-            f"empty or below k_lo={k_lo} "
-            f"(T_min={T_min:.4f}, T_max={T_max:.4f})"
-            + hint
-        )
+    k_start = slot_idx
 
     attempts = 0
     k = k_start - 1
+    time_horizon = 0.
+    b_traj: TrajectoryProfile = None
+    r_traj: TrajectoryProfile = None
 
     while True:
         k += 1
         attempts += 1
 
-        # Primary stop for bounded-window solvers: exhausted the window + 5-slot extension.
-        if bounded and k > k_max_window + 5:
-            n_tried = k - k_start
-            raise SlotAssignmentError(
-                f"No feasible slot for input {idx+1}: "
-                f"all {n_tried} slots in feasibility window rejected by solver"
-                + hint
-            )
-
         # Safety cap: backstop for default-window (unbounded) solvers.
         if attempts > 20:
             raise SlotAssignmentError(
-                f"No feasible slot for input {idx+1}: 20 attempts exhausted" + hint
+                f"No feasible slot for input {idx+1}: 20 attempts exhausted" 
             )
 
-        slot_time = k * slot_period + t_offset
+        t_offset = 0.32 / vd_slot
+        if (attempts > 1 and b_traj):
+            r_control.on_skip(t_control_start + time_horizon)
+            t_offset = t_offset + r_control.subsection(t_control_start + b_traj.T, 1.0).T # TODO pass dp as param
+            
+
+        slot_time = (k * slot_period) - t_offset
         time_horizon = slot_time - t_control_start
 
         try:
-            traj: TrajectoryProfile = solver.solve(
-                0.0, vi, L_buffer_ctrl, vf, time_horizon, bounds, policy
+            vf_temp = r_control.state_at(t_control_start + time_horizon)[1] # TODO pass needed params as function params
+            b_traj = solver.solve(
+                0.0, vi, L_buffer_ctrl, vf_temp, time_horizon, bounds, policy
             )
-            return k, traj
+            r_traj: TrajectoryProfile = r_control.subsection(t_control_start + b_traj.T, 1.0) # TODO pass dp as param
+            return k, b_traj, r_traj
         except InfeasibleError:
             continue
 

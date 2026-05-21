@@ -113,6 +113,10 @@ class KSBSimulation:
             self._u_control = ConstantVelocityControl(self.vu)
         else:
             raise KeyError("Unknown upstream control")
+
+        self._r_control = PreAccelerateControl(vu = self.vd, j_u_max=self.jmax, 
+                                               a_max = self.Amax, a_u_max=self.a_u_max, 
+                                               v_u_max=self.Vmax)
                                                
         self._d_solver = LinearTrajectorySolver()
         self._registrar = RegistrarProfile(
@@ -151,6 +155,7 @@ class KSBSimulation:
         t_duration_upstream = np.empty(self.batch, dtype=float)
         buffer_trajectories:List[TrajectoryProfile] = []
         upstream_ctrl_trajectories:List[TrajectoryProfile] = []
+        r_trajectories:List[TrajectoryProfile] = []
 
         slot_idx = 0
         prev_slot_idx = None
@@ -161,13 +166,15 @@ class KSBSimulation:
 
             t_in = t0 + upstream_ctrl_traj.T
             v_in = self._u_control.state_at(t_in)[V]
+
+
             #            straddle time                         registrar time
             t_offset = -(self.input_length / self.v_buff_out + self._registrar.T_total)           
 
-            slot_idx, buffer_traj = utils.get_next_slot(
+            slot_idx, buffer_traj, r_traj = utils.get_next_slot(
                 i, t_in, slot_idx, self.slot_length, v_in, self.v_buff_out, 
                 L_buffer_ctrl, self.input_bounds, self.policy, self.solver,
-                t_offset=t_offset, vd_slot=self.vd)
+                self._r_control, vd_slot=self.vd)
             
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1
@@ -180,13 +187,15 @@ class KSBSimulation:
 
             upstream_ctrl_trajectories.append(upstream_ctrl_traj)
             buffer_trajectories.append(buffer_traj)
+            r_trajectories.append(r_traj)
 
             prev_slot_idx = slot_idx
 
+        r_trajectories_Ts = np.array([traj.T for traj in r_trajectories])
         assigned_slot_times = assigned_slots * slot_period
         buffer_T_array = (
             assigned_slot_times - t_control_start
-            - self._registrar.T_total
+            - r_trajectories_Ts
             - self.input_length / self.v_buff_out
         )
 
@@ -203,20 +212,26 @@ class KSBSimulation:
         total_trajectories: List[CompositeTrajectory] = []
         downstream_T = L_downstream / vd
 
-        straddle_T = self.input_length / self.v_buff_out
-        straddle_traj = LinearTrajectory(
-            x0=np.array([0.0, self.v_buff_out, 0.0]),
-            T=straddle_T,
-        )
+        # straddle_T = self.input_length / self.v_buff_out
+        # straddle_traj = LinearTrajectory(
+        #     x0=np.array([0.0, self.v_buff_out, 0.0]),
+        #     T=straddle_T,
+        # )
 
         for i, tf in enumerate(buffer_T_array):
+            straddle_v0 = self._r_control.state_at(batch_t_spawn[i] + t_duration_upstream[i] + tf)[V]
+            straddle_T = self.input_length / straddle_v0
+            straddle_traj = LinearTrajectory(x0=np.array([0.0, straddle_v0, 0.0]),
+                                             T=straddle_T)
+
+            total_T = (
+                t_duration_upstream[i] + tf + straddle_T
+                + r_trajectories_Ts[i] + downstream_T
+            )
+
             d_traj = self._d_solver.solve(
                 pi=0.0, vi=vd, pf=L_downstream, vf=vd, T=downstream_T,
                 bounds=bounds, policy=policy,
-            )
-            total_T = (
-                t_duration_upstream[i] + tf + straddle_T
-                + self._registrar.T_total + downstream_T
             )
             comp_traj = CompositeTrajectory(
                 x0=x0_upstream,
@@ -225,7 +240,7 @@ class KSBSimulation:
                     upstream_ctrl_trajectories[i],
                     buffer_trajectories[i],
                     straddle_traj,
-                    self._registrar.trajectory,
+                    r_trajectories[i],
                     d_traj,
                 ),
             )
