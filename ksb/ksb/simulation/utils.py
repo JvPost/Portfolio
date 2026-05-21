@@ -217,6 +217,7 @@ def get_next_slot(
     slot_length: float,
     vi: float,
     vf: float,
+    ai: float,
     L_buffer_ctrl: float,
     bounds: np.ndarray,
     policy: Policy,
@@ -315,7 +316,8 @@ def get_next_slot(
 
         try:
             traj: TrajectoryProfile = solver.solve(
-                0.0, vi, L_buffer_ctrl, vf, time_horizon, bounds, policy
+                0.0, vi, L_buffer_ctrl, vf, time_horizon, bounds, policy, ai=ai,
+                af=0
             )
             return k, traj
         except InfeasibleError:

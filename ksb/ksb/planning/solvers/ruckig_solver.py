@@ -20,8 +20,6 @@ from ksb.planning.contracts import (
 # ──────────────────────────────────────────────────────────────────────────────
 # RuckigTrajectory
 # ──────────────────────────────────────────────────────────────────────────────
-
-
 @dataclass(frozen=True)
 class RuckigTrajectory(TrajectoryProfile):
     """TrajectoryProfile wrapping a ruckig.Trajectory (position mode, 1-DoF).
@@ -124,7 +122,7 @@ class RuckigSolver(IProfileSolver):
     """
 
     def solve(
-        self, pi, vi, pf, vf, T, bounds, policy
+        self, pi, vi, pf, vf, T, bounds, policy, ai=0, af=0
     ) -> RuckigTrajectory:
         Xf = pf - pi
 
@@ -134,11 +132,11 @@ class RuckigSolver(IProfileSolver):
 
         inp.current_position = [0.0]
         inp.current_velocity = [float(vi)]
-        inp.current_acceleration = [0.0]
+        inp.current_acceleration = [float(ai)]
 
         inp.target_position = [float(Xf)]
         inp.target_velocity = [float(vf)]
-        inp.target_acceleration = [0.0]
+        inp.target_acceleration = [float(af)]
 
         inp.max_velocity = [float(bounds[V_MAX])]
         inp.max_acceleration = [float(bounds[A_MAX])]
@@ -163,7 +161,7 @@ class RuckigSolver(IProfileSolver):
             )
 
         return RuckigTrajectory(
-            x0=np.array([0.0, float(vi), 0.0]),
+            x0=np.array([0.0, float(vi), ai]),
             T=traj.duration,
             _traj=traj,
         )

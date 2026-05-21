@@ -18,6 +18,11 @@ P, V, A = 0, 1, 2
 class TrajectoryProfile(ABC):
     x0: np.ndarray  # Initial state vector [p, v, a]; p is always 0 (delta semantics)
     T: float        # Duration [s]
+    
+    @property
+    def xf(self) -> np.ndarray:
+        """Budget matrix: free-window width per (pair, segment)."""
+        return self.eval(self.T)
 
     @abstractmethod
     def eval(self, t: Union[float, np.ndarray]) -> np.ndarray:
@@ -258,16 +263,19 @@ class CompositeTrajectory(TrajectoryProfile):
 
         # Velocity & acceleration continuity at junctions
         for i in range(1, len(self.segments)):
-            prev_end = self.segments[i - 1].eval(self.segments[i - 1].T)  # shape (3,)
-            curr_x0 = self.segments[i].x0  # shape (3,)
+            prev_seg = self.segments[i-1]
+            curr_seg = self.segments[i]
+
+            prev_xf = prev_seg.xf
+            curr_x0 = curr_seg.x0
             if not np.allclose(
-                [prev_end[V]],
+                [prev_xf[V]],
                 [curr_x0[V]],
                 atol=1e-4,
             ):
                 raise ValueError(
                     f"Velocity or acceleration discontinuity between segment {i-1} and {i}\n"
-                    f"  prev end: v={prev_end[V]:.6f}, a={prev_end[A]:.6f}\n"
+                    f"  prev end: v={prev_xf[V]:.6f}, a={prev_xf[A]:.6f}\n"
                     f"  next start: v={curr_x0[V]:.6f}, a={curr_x0[A]:.6f}"
                 )
 
