@@ -7,7 +7,7 @@ import numpy as np
 from scipy.special import ndtr, ndtri
 
 from ksb.motion.trajectories import TrajectoryProfile
-from ksb.planning.contracts import IProfileSolver, InfeasibleError, SlotAssignmentError, Policy
+from ksb.planning.contracts import IProfileSolver, InfeasibleError, InputError, SlotAssignmentError, Policy
 from ksb.planning.solvers.quintic import QuinticSolver
 from ksb.planning.solvers.scurve import SCurveSolver
 from ksb.planning.solvers.ruckig_solver import RuckigSolver
@@ -327,7 +327,7 @@ def get_solver_from_name(n) -> IProfileSolver:
     if n == 'quintic':
         return QuinticSolver()
     elif n == 'scurve':
-        return SCurveSolver()
+        raise InputError("Deprecated")
     elif n == 'ruckig':
         return RuckigSolver()
     else:

@@ -146,6 +146,7 @@ class KSBSimulation:
         # 2) upstream control & 3) slot assignment
         assigned_slots = np.empty(self.batch, dtype=int)
         abs_t_buffer_start = np.empty(self.batch, dtype=float)
+        buffer_T_array = np.empty_like(abs_t_buffer_start, dtype=float)
 
         upstream_trajectories:List[TrajectoryProfile] = []
         buffer_trajectories:List[TrajectoryProfile] = []
@@ -160,6 +161,10 @@ class KSBSimulation:
             upstream_traj:TrajectoryProfile = self._u_control.subsection(t0, L_upstream_traj)
 
             t_start_buffer_traj = t0 + upstream_traj.T 
+            
+            # duration if all we did is cruise
+            T_no_corr = (self.L_buffer - self.input_length) / upstream_traj.xf[V]
+
             #            straddle time                         registrar time
             t_offset = -((self.input_length / self.v_buff_out) + self._registrar.T_total)
 
@@ -168,6 +173,8 @@ class KSBSimulation:
                 i, t_start_buffer_traj, slot_idx, self.slot_length, upstream_traj.xf[V], 
                 self.v_buff_out,  self.a_u_max, L_buffer_traj, self.input_bounds, 
                 self.policy, self.solver, t_offset=t_offset, vd_slot=self.vd)
+
+            phase_error_i = (T_no_corr - buffer_traj.T) / slot_period
             
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1
@@ -183,20 +190,13 @@ class KSBSimulation:
             prev_slot_idx = slot_idx
 
         assigned_slot_times = assigned_slots * slot_period
-        buffer_T_array = (
-            assigned_slot_times - abs_t_buffer_start
-            - self._registrar.T_total
-            - self.input_length / self.v_buff_out
-        )
 
         # 4) Phase errors
-        projected_no_corr = batch_t_spawn + (L_upstream + self.L_buffer) / vu
-        phi_u = (assigned_slot_times - projected_no_corr) / slot_period
+        T_no_corr = batch_t_spawn + (L_upstream + self.L_buffer) / vu
+        phi_u = (assigned_slot_times - T_no_corr) / slot_period
 
         projected_no_corr_at_entry = abs_t_buffer_start + (self.L_buffer - self.input_length) / vu
-        phi_0 = (projected_no_corr_at_entry - assigned_slot_times) / slot_period
-
-        skip_indices = np.arange(1, self.batch)[np.diff(assigned_slots) > 1] - 1
+        phi_b = (projected_no_corr_at_entry - assigned_slot_times) / slot_period
 
         # 5) downstream trajectories & construction of the entire history
         total_trajectories: List[CompositeTrajectory] = []
@@ -208,10 +208,14 @@ class KSBSimulation:
             T=T_straddle_BR,
         )
 
-        for i, tf in enumerate(buffer_T_array):
+        
+        for i in range(self.batch):
+            T_buffer = buffer_trajectories[i].T
+            buffer_T_array[i] = T_buffer
+
             total_T = (
                 upstream_trajectories[i].T 
-                + tf + T_straddle_BR # buffer
+                + T_buffer + T_straddle_BR # buffer
                 + self._registrar.T_total + downstream_T # after buffer
             )
 
@@ -294,6 +298,8 @@ class KSBSimulation:
 
             for p in pairs:
                 p.compute_integrals(g_min=self.gap_min)
+
+        skip_indices = np.arange(1, self.batch)[np.diff(assigned_slots) > 1] - 1
 
         return SimulationResult(
             cfg=self.cfg,
