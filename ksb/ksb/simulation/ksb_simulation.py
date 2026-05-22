@@ -31,7 +31,7 @@ class KSBSimulation:
         self.Vmax = float(cfg.get("Vmax", 3.0))
         self.Amax = float(cfg.get("Amax", 8.5))
 
-        self.L_upstream = float(cfg.get("L_upstream", 1.0)) # the length of actual upstream
+        self.L_upstream = float(cfg.get("L_upstream", 1.0))
         self.L_buffer = float(cfg.get("L_buffer", 2.0))
         self.L_reg = float(cfg.get("L_registrar", 3.0))
         self.L_downstream = float(cfg.get("L_downstream", 1.0))
@@ -102,11 +102,11 @@ class KSBSimulation:
 
         upstream_control = cfg.get('upstream_control', 'acc')
         if (upstream_control == "acc"):
-            self._u_control = PreAccelerateControl(vu = self.vu, 
-                                                j_u_max = self.j_u_max,
-                                                a_max = self.Amax, 
-                                                a_u_max = self.a_u_max,
-                                                v_u_max= self.v_u_max,
+            self._u_control = PreAccelerateControl(vu=self.vu, 
+                                                j_u_max=self.j_u_max,
+                                                a_max=self.Amax, 
+                                                a_u_max=self.a_u_max,
+                                                v_u_max=self.v_u_max,
                                                 )
         elif (upstream_control == "constant"):
             self._u_control = ConstantVelocityControl(self.vu)
@@ -148,51 +148,36 @@ class KSBSimulation:
         abs_t_buffer_start = np.empty(self.batch, dtype=float)
 
         upstream_trajectories:List[TrajectoryProfile] = []
-        UB_trajectories: List[LinearTrajectory] = []
         buffer_trajectories:List[TrajectoryProfile] = []
 
         slot_idx = 0
         prev_slot_idx = None
         
         # Upstream control & slot assignments, which also computes buffer trajectory.
+        L_upstream_traj = L_upstream + self.input_length
+        L_buffer_traj = L_upstream - self.input_length
         for i, t0 in enumerate(batch_t_spawn):
-            upstream_traj:TrajectoryProfile = self._u_control.subsection(t0, L_upstream)
-            upstream_vf, upstream_af = upstream_traj.xf[V:]
+            upstream_traj:TrajectoryProfile = self._u_control.subsection(t0, L_upstream_traj)
 
-            if (upstream_af > 0):
-                T_straddle_UB = (-upstream_vf + np.sqrt(upstream_vf**2 
-                                                        + 2 * upstream_af 
-                                                        * self.input_length)) / upstream_af
-            else: # constant velocity
-                T_straddle_UB = self.input_length / upstream_vf
-
-            straddle_traj_UB = ConstantJerkTrajectory(
-                x0=np.array([0.0, upstream_vf, upstream_af]),
-                T = T_straddle_UB,
-                jerk=0
-            )
-
-            t_in = t0 + upstream_traj.T + straddle_traj_UB.T
-
+            t_start_buffer_traj = t0 + upstream_traj.T 
             #            straddle time                         registrar time
-            t_offset = -(self.input_length / self.v_buff_out + self._registrar.T_total)           
+            t_offset = -((self.input_length / self.v_buff_out) + self._registrar.T_total)
 
-
+            # compute buffer trajectories
             slot_idx, buffer_traj = utils.get_next_slot(
-                i, t_in, slot_idx, self.slot_length, straddle_traj_UB.xf[V], self.v_buff_out, 
-                self.a_u_max, self.L_buffer - self.input_length, self.input_bounds, self.policy, 
-                self.solver, t_offset=t_offset, vd_slot=self.vd)
+                i, t_start_buffer_traj, slot_idx, self.slot_length, upstream_traj.xf[V], 
+                self.v_buff_out,  self.a_u_max, L_buffer_traj, self.input_bounds, 
+                self.policy, self.solver, t_offset=t_offset, vd_slot=self.vd)
             
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1
                 if skipped:
-                    self._u_control.on_skip(t_in)
+                    self._u_control.on_skip(t_start_buffer_traj)
 
-            abs_t_buffer_start[i] = t_in
+            abs_t_buffer_start[i] = t_start_buffer_traj
             assigned_slots[i] = slot_idx
 
             upstream_trajectories.append(upstream_traj)
-            UB_trajectories.append(straddle_traj_UB)
             buffer_trajectories.append(buffer_traj)
 
             prev_slot_idx = slot_idx
@@ -208,8 +193,8 @@ class KSBSimulation:
         projected_no_corr = batch_t_spawn + (L_upstream + self.L_buffer) / vu
         phi_u = (assigned_slot_times - projected_no_corr) / slot_period
 
-        # projected_no_corr_at_entry = abs_t_buffer_start + L_buffer_ctrl / vu
-        # phi_0 = (projected_no_corr_at_entry - assigned_slot_times) / slot_period
+        projected_no_corr_at_entry = abs_t_buffer_start + (self.L_buffer - self.input_length) / vu
+        phi_0 = (projected_no_corr_at_entry - assigned_slot_times) / slot_period
 
         skip_indices = np.arange(1, self.batch)[np.diff(assigned_slots) > 1] - 1
 
@@ -217,35 +202,36 @@ class KSBSimulation:
         total_trajectories: List[CompositeTrajectory] = []
         downstream_T = L_downstream / vd
 
+        T_straddle_BR = self.input_length / self.v_buff_out
+        straddle_traj_BR = LinearTrajectory(
+            x0=np.array([0.0, self.v_buff_out, 0.0]),
+            T=T_straddle_BR,
+        )
+
         for i, tf in enumerate(buffer_T_array):
+            total_T = (
+                upstream_trajectories[i].T 
+                + tf + T_straddle_BR # buffer
+                + self._registrar.T_total + downstream_T # after buffer
+            )
+
             d_traj = self._d_solver.solve(
                 pi=0.0, vi=vd, pf=L_downstream, vf=vd, T=downstream_T,
                 bounds=bounds, policy=policy,
             )
 
-            T_straddle_BR = self.input_length / self.v_buff_out
-            straddle_traj_BR = LinearTrajectory(
-                x0=np.array([0.0, self.v_buff_out, 0.0]),
-                T=T_straddle_BR,
-            )
-
-            total_T = (
-                upstream_trajectories[i].T + UB_trajectories[i].T # before buffer
-                + tf + T_straddle_BR # buffer
-                + self._registrar.T_total + downstream_T # after buffer
-            )
             comp_traj = CompositeTrajectory(
                 x0=x0_upstream,
                 T=total_T,
                 segments=(
                     upstream_trajectories[i],
-                    UB_trajectories[i],
                     buffer_trajectories[i],
                     straddle_traj_BR,
                     self._registrar.trajectory,
                     d_traj,
                 ),
             )
+            
             total_trajectories.append(comp_traj)
 
         #

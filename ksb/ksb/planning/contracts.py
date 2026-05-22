@@ -49,10 +49,10 @@ class IProfileSolver(ABC):
 
     bounds is np.ndarray([j_max, A_max, V_max, gap_min]) — use J_MAX, A_MAX, V_MAX indices.
     """
-    def solve(self, pi, vi, pf, vf, T, bounds, policy):
+    def solve(self, pi, vi, pf, vf, T, bounds, policy, ai, af):
         ...
 
-    def feasibility_window(self, pi, vi, pf, vf, bounds, policy) -> tuple[float, float]:
+    def feasibility_window(self, pi, vi, pf, vf, bounds, policy, ai, af) -> tuple[float, float]:
         """Return (T_min, T_max) such that solve(..., T, ...) is feasible for T in this range.
 
         Default implementation returns (0.0, math.inf), meaning the solver has no

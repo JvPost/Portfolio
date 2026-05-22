@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Tuple, Union
+from functools import cached_property
+from typing import Optional, Tuple, Union
 
 import numpy as np
 from scipy.optimize import brentq
@@ -18,10 +19,9 @@ P, V, A = 0, 1, 2
 class TrajectoryProfile(ABC):
     x0: np.ndarray  # Initial state vector [p, v, a]; p is always 0 (delta semantics)
     T: float        # Duration [s]
-    
-    @property
+
+    @cached_property
     def xf(self) -> np.ndarray:
-        """Budget matrix: free-window width per (pair, segment)."""
         return self.eval(self.T)
 
     @abstractmethod
@@ -285,6 +285,14 @@ class CompositeTrajectory(TrajectoryProfile):
                 f"Provided T ({self.T}) does not match sum of segment durations ({computed_t})"
             )
 
+        computed_p = sum(seg.xf[P] for seg in self.segments)
+        __p = self.xf[P]
+        if not np.isclose(__p, computed_p, atol=1e-6):
+            raise ValueError(
+                f"Provided P ({__p}) does not match sum of segment distances ({computed_p})"
+            )
+            
+
     def eval(self, t: Union[float, np.ndarray]) -> np.ndarray:
         if np.isscalar(t):
             return self._evaluate_scalar(t)
@@ -305,13 +313,14 @@ class CompositeTrajectory(TrajectoryProfile):
             if t <= seg_end_time:
                 local_t = t - cum_time
                 local = seg.eval(local_t)  # shape (3,)
-                return np.array([cum_p_offset + local[P], local[V], local[A]])
+                return np.array([cum_p_offset + local[P], local[V], local[A]]) # don't loop through all segments
             full = seg.eval(seg.T)
             cum_p_offset += full[P]
             cum_time = seg_end_time
 
+        # looped through all segments
         last = self.segments[-1].eval(self.segments[-1].T)
-        return np.array([cum_p_offset + last[P], last[V], last[A]])
+        return np.array([cum_p_offset, last[V], last[A]]) 
 
     def _evaluate_array(self, t_arr: np.ndarray) -> np.ndarray:
         t_c = np.clip(t_arr, 0.0, self.T)
@@ -364,5 +373,3 @@ class CompositeTrajectory(TrajectoryProfile):
             p_offset += p_end_seg
             t_offset += seg.T
         return None
-
-

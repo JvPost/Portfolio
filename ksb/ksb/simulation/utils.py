@@ -218,7 +218,7 @@ def get_next_slot(
     vi: float,
     vf: float,
     ai: float,
-    L_buffer_ctrl: float,
+    L: float,
     bounds: np.ndarray,
     policy: Policy,
     solver: IProfileSolver,
@@ -243,7 +243,7 @@ def get_next_slot(
         slot_length:     slot spacing (m)
         vi:              initial velocity (m/s)
         vf:              target velocity at buffer exit (m/s)
-        L_buffer_ctrl:   distance to cover in the buffer (m)
+        L:               distance to cover in the buffer (m)
         bounds:          np.array([j_max, A_max, V_max, gap_min])
         policy:          Policy config
         solver:          trajectory solver
@@ -261,7 +261,7 @@ def get_next_slot(
     slot_period = slot_length / (vd_slot if vd_slot is not None else vf)
     k_lo = slot_idx + 1  # must occupy a later slot than the previous input
 
-    T_min, T_max = solver.feasibility_window(0.0, vi, L_buffer_ctrl, vf, bounds, policy)
+    T_min, T_max = solver.feasibility_window(0.0, vi, L, vf, bounds, policy, ai, .0)
     hint = "; improve heuristic" if idx == 0 else ""
 
     # Sentinel: feasibility_window signals an infeasible geometry with T_min > T_max.
@@ -316,11 +316,11 @@ def get_next_slot(
 
         try:
             traj: TrajectoryProfile = solver.solve(
-                0.0, vi, L_buffer_ctrl, vf, time_horizon, bounds, policy, ai=ai,
+                0.0, vi, L, vf, time_horizon, bounds, policy, ai=ai,
                 af=0
             )
             return k, traj
-        except InfeasibleError:
+        except InfeasibleError: # skip
             continue
 
 def get_solver_from_name(n) -> IProfileSolver:

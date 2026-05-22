@@ -103,8 +103,6 @@ class RuckigTrajectory(TrajectoryProfile):
 # ──────────────────────────────────────────────────────────────────────────────
 # RuckigSolver
 # ──────────────────────────────────────────────────────────────────────────────
-
-
 @dataclass(frozen=True)
 class RuckigSolver(IProfileSolver):
     """Ruckig-based profile solver using ControlInterface.Position (1-DoF).

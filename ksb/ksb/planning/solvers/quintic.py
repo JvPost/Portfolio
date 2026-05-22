@@ -13,7 +13,7 @@ class QuinticSolver(IProfileSolver):
     def __init__(self, feasibility_dt = .01):
         self.feasibility_dt = feasibility_dt
 
-    def solve(self, pi, vi, pf, vf, T, bounds, policy) -> PolynomialTrajectory:
+    def solve(self, pi, vi, pf, vf, T, bounds, policy, ai, af) -> PolynomialTrajectory:
         if T <= 0:
             raise InfeasibleError("T must be positive")
 
@@ -26,12 +26,12 @@ class QuinticSolver(IProfileSolver):
             [5*T**4,  4*T**3, 3*T**2, 2*T, 1, 0], # v(T) = vf
             [20*T**3, 12*T**2, 6*T,  2,   0, 0],  # a(T) = 0
         ])
-        b = np.array([pi, vi, 0.0, pf, vf, 0.0])
+        b = np.array([pi, vi, ai, pf, vf, af])
 
         coeffs = np.linalg.solve(mat, b)
         poly = np.poly1d(coeffs)
 
-        x0 = np.array([pi, vi, 0.0])
+        x0 = np.array([pi, vi, ai])
         traj = PolynomialTrajectory(x0=x0, T=T, poly=poly)
 
         # Most efficient way of checking is numerically evaluating the function. 
