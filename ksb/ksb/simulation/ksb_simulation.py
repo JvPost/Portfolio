@@ -90,15 +90,14 @@ class KSBSimulation:
             self.jmax,
             self.Amax,
             self.Vmax,
-            self.gap_min,
         ])
 
         v_min = float(cfg.get("v_min", 0.0))
         self.policy = Policy(input_length=self.input_length, v_min=v_min)
 
         self.j_u_max = self.jmax
-        self.v_u_max = self.Vmax
-        self.a_u_max = np.abs(self.Vmax - self.vu) / (self.Q * self.slot_period)
+        self.v_u_max = 2.5
+        self.a_u_max = np.abs(self.v_u_max - self.vu) / (self.Q * self.slot_period)
 
         upstream_control = cfg.get('upstream_control', 'acc')
         if (upstream_control == "acc"):
@@ -115,14 +114,14 @@ class KSBSimulation:
                                                
         self._d_solver = LinearTrajectorySolver()
 
-        self._registrar = RegistrarProfile(
-            v_in=self.v_buff_out,
-            v_out=self.vd,
-            L_reg=self.L_reg,
-            input_length=self.input_length,
-            j_max=self.jmax,
-            a_max=self.Amax,
-        )
+        # self._registrar = RegistrarProfile(
+        #     v_in=self.v_buff_out,
+        #     v_out=self.vd,
+        #     L_reg=self.L_reg,
+        #     input_length=self.input_length,
+        #     j_max=self.jmax,
+        #     a_max=self.Amax,
+        # )
 
     def run(self, seed: Optional[int] = None, *, skip_pair_records: bool = True) -> SimulationResult:
         vu, vd = self.vu, self.vd
@@ -150,28 +149,42 @@ class KSBSimulation:
 
         upstream_trajectories:List[TrajectoryProfile] = []
         buffer_trajectories:List[TrajectoryProfile] = []
+        registrar_trajectories:List[TrajectoryProfile] = []
 
         slot_idx = 0
         prev_slot_idx = None
         
         # Upstream control & slot assignments, which also computes buffer trajectory.
         L_upstream_traj = L_upstream + self.input_length
-        L_buffer_traj = L_upstream - self.input_length
+        L_buffer_traj = self.L_buffer - self.input_length
         for i, t0 in enumerate(batch_t_spawn):
             upstream_traj:TrajectoryProfile = self._u_control.subsection(t0, L_upstream_traj)
 
             t_start_buffer_traj = t0 + upstream_traj.T 
+
+            buffer_xi = upstream_traj.xf
+            buffer_vf = np.clip(buffer_xi[V], 0, self.input_bounds[2]) # equalize incoming and outgoing vel
+            buffer_af = .0
+
+            _reg = RegistrarProfile(
+                v_in=buffer_vf,
+                v_out=self.vd,
+                L_reg=self.L_reg,
+                input_length=self.input_length,
+                j_max=self.jmax,
+                a_max=self.Amax
+            )
             
             # duration if all we did is cruise
-            T_no_corr = (self.L_buffer - self.input_length) / upstream_traj.xf[V]
+            T_no_corr = (self.L_buffer - self.input_length) / buffer_xi[V]
 
-            #            straddle time                         registrar time
-            t_offset = -((self.input_length / self.v_buff_out) + self._registrar.T_total)
+            #            straddle time                           registrar time
+            t_offset = -((self.input_length / buffer_vf) + _reg.T_total)
 
             # compute buffer trajectories
             slot_idx, buffer_traj = utils.get_next_slot(
-                i, t_start_buffer_traj, slot_idx, self.slot_length, upstream_traj.xf[V], 
-                self.v_buff_out,  self.a_u_max, L_buffer_traj, self.input_bounds, 
+                i, t_start_buffer_traj, slot_idx, self.slot_length, buffer_xi[V], 
+                buffer_vf, self.a_u_max, L_buffer_traj, self.input_bounds, 
                 self.policy, self.solver, t_offset=t_offset, vd_slot=self.vd)
 
             phase_error_i = (T_no_corr - buffer_traj.T) / slot_period
@@ -186,6 +199,7 @@ class KSBSimulation:
 
             upstream_trajectories.append(upstream_traj)
             buffer_trajectories.append(buffer_traj)
+            registrar_trajectories.append(_reg.trajectory)
 
             prev_slot_idx = slot_idx
 
@@ -202,21 +216,22 @@ class KSBSimulation:
         total_trajectories: List[CompositeTrajectory] = []
         downstream_T = L_downstream / vd
 
-        T_straddle_BR = self.input_length / self.v_buff_out
-        straddle_traj_BR = LinearTrajectory(
-            x0=np.array([0.0, self.v_buff_out, 0.0]),
-            T=T_straddle_BR,
-        )
-
-        
         for i in range(self.batch):
             T_buffer = buffer_trajectories[i].T
             buffer_T_array[i] = T_buffer
 
+            T_straddle_BR = self.input_length / buffer_trajectories[i].xf[V]
+            straddle_traj_BR = LinearTrajectory(
+                x0=np.array([0.0, buffer_trajectories[i].xf[V], 0.0]),
+                T=T_straddle_BR,
+            )
+
+            reg_traj = registrar_trajectories[i]
+
             total_T = (
                 upstream_trajectories[i].T 
-                + T_buffer + T_straddle_BR # buffer
-                + self._registrar.T_total + downstream_T # after buffer
+                + T_buffer + T_straddle_BR # buffer + straddle
+                + reg_traj.T + downstream_T # after buffer
             )
 
             d_traj = self._d_solver.solve(
@@ -231,7 +246,7 @@ class KSBSimulation:
                     upstream_trajectories[i],
                     buffer_trajectories[i],
                     straddle_traj_BR,
-                    self._registrar.trajectory,
+                    reg_traj,
                     d_traj,
                 ),
             )
@@ -309,6 +324,7 @@ class KSBSimulation:
             time_horizons=buffer_T_array,
             skip_indices=skip_indices,
             phi_u=phi_u,
+            phi_b=phi_b,
             system_trajectories=total_trajectories,
             buffer_trajectories=buffer_trajectories,
             pair_records=pairs,

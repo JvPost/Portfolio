@@ -320,7 +320,7 @@ class CompositeTrajectory(TrajectoryProfile):
 
         # looped through all segments
         last = self.segments[-1].eval(self.segments[-1].T)
-        return np.array([cum_p_offset, last[V], last[A]]) 
+        return np.array([cum_p_offset + last[P], last[V], last[A]]) 
 
     def _evaluate_array(self, t_arr: np.ndarray) -> np.ndarray:
         t_c = np.clip(t_arr, 0.0, self.T)

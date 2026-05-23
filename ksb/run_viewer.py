@@ -31,8 +31,8 @@ def main():
     print(f"Running simulation: solver={solver_name}  seed={args.seed}  "
           f"batch={cfg['batch']}  std={cfg['input_gap_std']}")
     result = KSBSimulation(cfg=cfg).run(seed=args.seed)
-    print(f"  assigned_slots : {result.assigned_slots}")
-    print(f"  skip_indices   : {result.skip_indices}")
+    print(f"  idx first assigned slot: {result.assigned_slots[0]}")
+    print(f"  skips after inputs:      {result.skip_indices+1}")
 
     print("Launching viewer…  SPACE to start, ESC to quit.")
     KSBViewer(result, cfg).run()

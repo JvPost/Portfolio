@@ -19,6 +19,7 @@ class SimulationResult:
     time_horizons: np.ndarray
     skip_indices: np.ndarray
     phi_u: np.ndarray
+    phi_b: np.ndarray
     system_trajectories: List[CompositeTrajectory]
     buffer_trajectories: List[TrajectoryProfile]
     pair_records: List[PairRecord]

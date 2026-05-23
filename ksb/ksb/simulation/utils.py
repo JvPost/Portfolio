@@ -259,56 +259,18 @@ def get_next_slot(
         SlotAssignmentError: on window-empty, window-exhausted, or cap failure.
     """
     slot_period = slot_length / (vd_slot if vd_slot is not None else vf)
-    k_lo = slot_idx + 1  # must occupy a later slot than the previous input
-
-    T_min, T_max = solver.feasibility_window(0.0, vi, L, vf, bounds, policy, ai, .0)
-    hint = "; improve heuristic" if idx == 0 else ""
-
-    # Sentinel: feasibility_window signals an infeasible geometry with T_min > T_max.
-    if T_min > T_max:
-        raise SlotAssignmentError(
-            f"No feasible slot for input {idx+1}: solver reports infeasible geometry "
-            f"(T_min={T_min}, T_max={T_max})" + hint
-        )
-
-    # Map T-window to k-window via the affine inverse.
-    base = (t_control_start - t_offset) / slot_period
-    k_min_window = math.ceil(base + T_min / slot_period)
-    bounded = not math.isinf(T_max)
-    k_max_window = math.floor(base + T_max / slot_period) if bounded else None
-
-    k_start = max(k_lo, k_min_window)
-
-    # Window entirely below the earliest allowable slot (only detectable when bounded).
-    if bounded and k_start > k_max_window:
-        raise SlotAssignmentError(
-            f"No feasible slot for input {idx+1}: "
-            f"window [k_min={k_min_window}, k_max={k_max_window}] "
-            f"empty or below k_lo={k_lo} "
-            f"(T_min={T_min:.4f}, T_max={T_max:.4f})"
-            + hint
-        )
 
     attempts = 0
-    k = k_start - 1
+    k = slot_idx
 
     while True:
         k += 1
         attempts += 1
 
-        # Primary stop for bounded-window solvers: exhausted the window + 5-slot extension.
-        if bounded and k > k_max_window + 5:
-            n_tried = k - k_start
-            raise SlotAssignmentError(
-                f"No feasible slot for input {idx+1}: "
-                f"all {n_tried} slots in feasibility window rejected by solver"
-                + hint
-            )
-
         # Safety cap: backstop for default-window (unbounded) solvers.
-        if attempts > 20:
+        if attempts > 10:
             raise SlotAssignmentError(
-                f"No feasible slot for input {idx+1}: 20 attempts exhausted" + hint
+                f"No feasible slot for input {idx+1}: 20 attempts exhausted"
             )
 
         slot_time = k * slot_period + t_offset

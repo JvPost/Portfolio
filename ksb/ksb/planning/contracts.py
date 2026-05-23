@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ksb.motion.trajectories import CompositeTrajectory, TrajectoryProfile
 
 # ---------- Bounds array indices ----------
-J_MAX, A_MAX, V_MAX, PITCH_MIN = 0, 1, 2, 3
+J_MAX, A_MAX, V_MAX = 0, 1, 2
 
 
 # ---------- Exceptions (failure channel) ----------
@@ -51,12 +51,3 @@ class IProfileSolver(ABC):
     """
     def solve(self, pi, vi, pf, vf, T, bounds, policy, ai, af):
         ...
-
-    def feasibility_window(self, pi, vi, pf, vf, bounds, policy, ai, af) -> tuple[float, float]:
-        """Return (T_min, T_max) such that solve(..., T, ...) is feasible for T in this range.
-
-        Default implementation returns (0.0, math.inf), meaning the solver has no
-        closed-form window and callers should fall back to iterative search.
-        Solvers with a tractable window (e.g. SCurveSolver) may override.
-        """
-        return (0.0, math.inf)

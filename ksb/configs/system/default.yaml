@@ -1,9 +1,9 @@
 # input
-batch: 37
+batch: 100
 input_length: 0.32
 input_gap_mean: 0.6
-input_gap_std: 0.05
-input_gap_rho: 0.5
+input_gap_std: 0.00
+input_gap_rho: 0.0
 arrival_rate_ppm: 150
 
 # upstream
@@ -23,7 +23,7 @@ gamma: 0.0
 solver: ruckig
 L_buffer: 3.0
 n_buffer_seg: 8
-eta_v: 1.0 # kinematic headroom: v^{BR} = eta_v * v_d
+eta_v: 2.2 # kinematic headroom: v^{BR} = eta_v * v_d
 
 v_min: 0.0 # planner-imposed velocity floor (m/s); 0 means no floor
 start_margin: 1 # the fraction of the input length, that must be on the buffer, before buffer control may commence.
@@ -36,7 +36,7 @@ n_reg_seg: 1
 # downstream
 L_downstream: 2.0
 eta_s: 1.5 # slot_length = eta_s * input_length
-eta_r: 1.1 # slot_rate   = eta_r * arrival_rate_ppm
+eta_r: 1.05 # slot_rate   = eta_r * arrival_rate_ppm
 
 # \pi^S bounds
 a_max_sync: 25.0
