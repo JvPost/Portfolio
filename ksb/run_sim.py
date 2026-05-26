@@ -64,29 +64,6 @@ def main():
           f"std={result.phi_u.std():.3f}  "
           f"range=[{result.phi_u.min():.3f}, {result.phi_u.max():.3f}]")
 
-    # ── Gap metrics ───────────────────────────────────────────────────────────
-    if (len(result.pair_records) > 0):
-        print()
-        print("=== Gap metrics (consecutive pairs on buffer) ===")
-        pairs = result.pair_records
-        min_gaps = np.array([p.min_gap for p in pairs])
-        avg_margins = np.array([p.average_margin for p in pairs
-                                if p.average_margin is not None])
-        viol_integrals = np.array([p.violation_integral for p in pairs
-                                if p.violation_integral is not None])
-
-        p_min_threshold = pairs[0].g_min_threshold if pairs else float("nan")
-        print(f"  p_min threshold            : {p_min_threshold:.3f} m")
-        print(f"  Min instantaneous gap    : {min_gaps.min():.4f} m  "
-            f"(pair {int(np.argmin(min_gaps))})")
-        print(f"  Mean min gap per pair    : {min_gaps.mean():.4f} m")
-        n_violating = int(np.sum(min_gaps < p_min_threshold))
-        print(f"  Pairs violating p_min      : {n_violating} / {len(pairs)}")
-        if len(viol_integrals) > 0:
-            print(f"  Total violation integral   : {viol_integrals.sum():.6f} m·s")
-        if len(avg_margins) > 0:
-            print(f"  Mean average margin        : {avg_margins.mean():.4f} m")
-
     if (result.segment_sync_response):
         print()
         print("=== Segment boundary events (i, k) ===")

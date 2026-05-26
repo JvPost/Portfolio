@@ -62,20 +62,21 @@ class KSBSimulation:
         self.rd = eta_r * self.ru
         assert self.rd >= self.ru, "slot rate must be >= arrival rate"
 
-        self.Q = self.rd / (self.rd - self.ru)
-
         self.vu = self.ru * self.gap_mean
         self.vd = self.rd * self.slot_length
 
+        rate_delta = (self.rd - self.ru)
+        self.Q = self.rd / rate_delta if rate_delta != 0 else float('inf')
+
         eta_v = float(cfg.get("eta_v", 1.16))  # kinematic headroom factor
-        self.v_buff_out = eta_v * self.vd       # v^{BR} = eta_v * v_d
+        self.v_BR = eta_v * self.vd            # v^{BR} = eta_v * v_d
 
         _fp_atol = 1e-9  # tolerance for floating-point rounding at the constraint boundary
 
-        assert self.v_buff_out >= self.vd - _fp_atol, \
-            f"v_buff_out ({self.v_buff_out}) must be >= v_d ({self.vd}); eta_v >= 1"
-        assert self.v_buff_out <= self.Vmax + _fp_atol, \
-            f"v_buff_out ({self.v_buff_out}) exceeds Vmax ({self.Vmax}); reduce eta_v or eta_r/eta_s"
+        assert self.v_BR >= self.vd - _fp_atol, \
+            f"v_buff_out ({self.v_BR}) must be >= v_d ({self.vd}); eta_v >= 1"
+        assert self.v_BR <= self.Vmax + _fp_atol, \
+            f"v_buff_out ({self.v_BR}) exceeds Vmax ({self.Vmax}); reduce eta_v or eta_r/eta_s"
 
         self.slot_period = self.slot_length / self.vd
 
@@ -96,7 +97,7 @@ class KSBSimulation:
         self.policy = Policy(input_length=self.input_length, v_min=v_min)
 
         self.j_u_max = self.jmax
-        self.v_u_max = 2.5
+        self.v_u_max = self.Vmax
         self.a_u_max = np.abs(self.v_u_max - self.vu) / (self.Q * self.slot_period)
 
         upstream_control = cfg.get('upstream_control', 'acc')
@@ -109,19 +110,12 @@ class KSBSimulation:
                                                 )
         elif (upstream_control == "constant"):
             self._u_control = ConstantVelocityControl(self.vu)
+        elif (upstream_control == "const"):
+            self._u_control = ConstantVelocityControl(self.vu)
         else:
             raise KeyError("Unknown upstream control")
                                                
         self._d_solver = LinearTrajectorySolver()
-
-        # self._registrar = RegistrarProfile(
-        #     v_in=self.v_buff_out,
-        #     v_out=self.vd,
-        #     L_reg=self.L_reg,
-        #     input_length=self.input_length,
-        #     j_max=self.jmax,
-        #     a_max=self.Amax,
-        # )
 
     def run(self, seed: Optional[int] = None, *, skip_pair_records: bool = True) -> SimulationResult:
         vu, vd = self.vu, self.vd
@@ -157,13 +151,18 @@ class KSBSimulation:
         # Upstream control & slot assignments, which also computes buffer trajectory.
         L_upstream_traj = L_upstream + self.input_length
         L_buffer_traj = self.L_buffer - self.input_length
+
+        phi_b = np.empty(self.batch, dtype=float)
         for i, t0 in enumerate(batch_t_spawn):
             upstream_traj:TrajectoryProfile = self._u_control.subsection(t0, L_upstream_traj)
 
             t_start_buffer_traj = t0 + upstream_traj.T 
 
             buffer_xi = upstream_traj.xf
-            buffer_vf = np.clip(buffer_xi[V], 0, self.input_bounds[2]) # equalize incoming and outgoing vel
+
+            # buffer_vf = np.clip(buffer_xi[V], 0, self.Vmax) # equalize incoming and outgoing vel
+            buffer_vf = self.v_BR # fixed
+
             buffer_af = .0
 
             _reg = RegistrarProfile(
@@ -187,7 +186,7 @@ class KSBSimulation:
                 buffer_vf, self.a_u_max, L_buffer_traj, self.input_bounds, 
                 self.policy, self.solver, t_offset=t_offset, vd_slot=self.vd)
 
-            phase_error_i = (T_no_corr - buffer_traj.T) / slot_period
+            phi_b[i] = (T_no_corr - buffer_traj.T) / slot_period
             
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1
@@ -208,9 +207,6 @@ class KSBSimulation:
         # 4) Phase errors
         T_no_corr = batch_t_spawn + (L_upstream + self.L_buffer) / vu
         phi_u = (assigned_slot_times - T_no_corr) / slot_period
-
-        projected_no_corr_at_entry = abs_t_buffer_start + (self.L_buffer - self.input_length) / vu
-        phi_b = (projected_no_corr_at_entry - assigned_slot_times) / slot_period
 
         # 5) downstream trajectories & construction of the entire history
         total_trajectories: List[CompositeTrajectory] = []
@@ -272,48 +268,6 @@ class KSBSimulation:
             bounds = np.array([a_max_sync, j_max_sync])
             segment_sync_response = SegmentSyncResponse(segment_events, bounds)
 
-        pairs: List[PairRecord] = []
-        if self.batch > 1 and not skip_pair_records:
-            # time computation such that we also keep track of inputs in buffer when 
-            # input $i$ already entered buffer, but $i+1$ has not. 
-            p_window_start = L_upstream
-            p_window_end = L_upstream + self.L_buffer + self.L_reg + self.input_length
-
-            t_i_boundary_upstream_buffer = np.array(
-                [traj.find_time_at_position(p_window_start) for traj in total_trajectories]
-                )
-
-            input_delta_t = np.diff(batch_t_spawn + t_i_boundary_upstream_buffer) 
-            
-            # Relative time windows for i and j = i+1. We start keeping track of time
-            # when input j enters the buffer. 
-            t_j_window_start = np.array(t_i_boundary_upstream_buffer[1:])
-
-            # We stop keeping track of time when input i's trailing edge leaves the buffer (p_window_end)
-            # Since local time start with input $j$ and ends with a position for input $i$,
-            # we have to substract the relative time difference.
-            t_j_window_end   = np.array(
-                [traj.find_time_at_position(p_window_end) for traj in total_trajectories[:-1]]
-            ) - input_delta_t
-
-            # 7) pair record
-            # Check some of the logic. 
-            assert np.all(t_j_window_end <= np.array([traj.T for traj in total_trajectories[1:]])), \
-                "t_window_end exceeds follower trajectory duration — overtake detected"
-            assert np.all(t_j_window_end > t_j_window_start), \
-                "t_window_end <= t_window_start — degenerate or inverted window"
-
-            pairs = compute_pairs(
-                trajectories=total_trajectories,
-                delta_t=input_delta_t,
-                t_rel_start=t_j_window_start,
-                t_rel_end=t_j_window_end,
-                n_points=1200,
-            )
-
-            for p in pairs:
-                p.compute_integrals(g_min=self.gap_min)
-
         skip_indices = np.arange(1, self.batch)[np.diff(assigned_slots) > 1] - 1
 
         return SimulationResult(
@@ -327,7 +281,6 @@ class KSBSimulation:
             phi_b=phi_b,
             system_trajectories=total_trajectories,
             buffer_trajectories=buffer_trajectories,
-            pair_records=pairs,
             segment_events=segment_events,
             segment_sync_response=segment_sync_response,
         )
