@@ -53,13 +53,12 @@ def _plot_budget_matrix(
     ax_k    = fig.add_subplot(gs[1, 0])
     ax_i    = fig.add_subplot(gs[1, 1])
 
-    # ── Heatmap ──────────────────────────────────────────────────────────────
-    if standardized:
-        plot_matrix = np.clip(matrix, -1, 1)
-        norm, cmap = make_km_norm_and_cmap()
-        im = ax_heat.imshow(plot_matrix, cmap=cmap, norm=norm, aspect="auto", interpolation="nearest")
-    else:
-        im = ax_heat.imshow(matrix, cmap="RdYlGn", aspect="auto", interpolation="nearest")
+    vmin, vmax = -0.1, 0.1
+    norm = mcolors.TwoSlopeNorm(vcenter=0, vmin=vmin, vmax=vmax)
+    im = ax_heat.imshow(np.clip(matrix, vmin, vmax), cmap="RdYlGn", norm=norm,
+                        aspect="auto", interpolation="nearest")
+
+    # # ── Heatmap ──────────────────────────────────────────────────────────────
     ax_heat.set_xlabel("Segment index k", fontsize=11)
     ax_heat.set_ylabel("Pair index i", fontsize=11)
     ax_heat.set_title(f"{heatmap_title}{suffix}", fontsize=12, fontweight="bold")
@@ -83,7 +82,7 @@ def _plot_budget_matrix(
     ax_i.axhline(0, color="black", linewidth=0.8, linestyle="--")
     ax_i.set_xlabel("Pair index i", fontsize=11)
     ax_i.set_ylabel(f"⟨{label}⟩ over segments  (s)", fontsize=11)
-    ax_i.set_title(f"Mean per pair  ${label}⟩_k(i){suffix}$", fontsize=11)
+    ax_i.set_title(f"Mean per pair  ${label}_k(i){suffix}$", fontsize=11)
     ax_i.grid(axis="y", alpha=0.3)
 
     plt.show()
