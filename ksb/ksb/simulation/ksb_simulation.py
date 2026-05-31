@@ -152,7 +152,7 @@ class KSBSimulation:
         L_upstream_traj = L_upstream + self.input_length
         L_buffer_traj = self.L_buffer - self.input_length
 
-        phi_b = np.empty(self.batch, dtype=float)
+        phase_error_buffer = np.empty(self.batch, dtype=float)
         for i, t0 in enumerate(batch_t_spawn):
             upstream_traj:TrajectoryProfile = self._u_control.subsection(t0, L_upstream_traj)
 
@@ -186,7 +186,7 @@ class KSBSimulation:
                 buffer_vf, self.a_u_max, L_buffer_traj, self.input_bounds, 
                 self.policy, self.solver, t_offset=t_offset, vd_slot=self.vd)
 
-            phi_b[i] = (T_no_corr - buffer_traj.T) / slot_period
+            phase_error_buffer[i] = (T_no_corr - buffer_traj.T) / slot_period
             
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1
@@ -206,7 +206,7 @@ class KSBSimulation:
 
         # 4) Phase errors
         T_no_corr = batch_t_spawn + (L_upstream + self.L_buffer) / vu
-        phi_u = (assigned_slot_times - T_no_corr) / slot_period
+        phase_error_upstream = (assigned_slot_times - T_no_corr) / slot_period
 
         # 5) downstream trajectories & construction of the entire history
         total_trajectories: List[CompositeTrajectory] = []
@@ -277,8 +277,8 @@ class KSBSimulation:
             assigned_slots=assigned_slots,
             time_horizons=buffer_T_array,
             skip_indices=skip_indices,
-            phi_u=phi_u,
-            phi_b=phi_b,
+            phi_u=phase_error_upstream,
+            phi_b=phase_error_buffer,
             system_trajectories=total_trajectories,
             buffer_trajectories=buffer_trajectories,
             segment_events=segment_events,

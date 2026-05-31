@@ -1,9 +1,9 @@
 # input
-batch: 100
+batch: 300
 input_length: 0.32
 input_gap_mean: 0.6
 input_gap_std: 0.05
-input_gap_rho: 1.0
+input_gap_rho: 0.0
 arrival_rate_ppm: 150
 
 # upstream
@@ -20,7 +20,7 @@ Amax: 8.5
 beta: 0.0
 gamma: 0.0
 
-solver: quintic
+solver: ruckig
 L_buffer: 2.5
 n_buffer_seg: 7
 # eta_v: 2.1875 # kinematic headroom: v^{BR} = eta_v * v_d
@@ -37,7 +37,7 @@ n_reg_seg: 1
 # downstream
 L_downstream: 2.0
 eta_s: 2.0 # slot_length = eta_s * input_length
-eta_r: 1.00 # slot_rate   = eta_r * arrival_rate_ppm
+eta_r: 1.10 # slot_rate   = eta_r * arrival_rate_ppm
 
 # \pi^S bounds
 a_max_sync: 25.0
