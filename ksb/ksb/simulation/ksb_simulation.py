@@ -40,7 +40,7 @@ class KSBSimulation:
         self.n_buffer_seg = int(cfg.get("n_buffer_seg", 5))
         self.n_reg_seg = int(cfg.get("n_reg_seg", 5))
 
-        Lmin_factor = float(cfg.get("Lmin_factor", 0.5))
+        Lmin_factor = float(cfg.get("Lmin_factor", 0.25))
         Lmin = Lmin_factor * self.input_length
         beta = float(cfg.get("beta", 0.0))
         gamma = float(cfg.get("gamma", 0.0))
@@ -153,7 +153,10 @@ class KSBSimulation:
         L_buffer_traj = self.L_buffer - self.input_length
 
         phase_error_buffer = np.empty(self.batch, dtype=float)
+
+        inputs_since_skip = 0
         for i, t0 in enumerate(batch_t_spawn):
+            
             upstream_traj:TrajectoryProfile = self._u_control.subsection(t0, L_upstream_traj)
 
             t_start_buffer_traj = t0 + upstream_traj.T 
@@ -162,8 +165,7 @@ class KSBSimulation:
 
             # buffer_vf = np.clip(buffer_xi[V], 0, self.Vmax) # equalize incoming and outgoing vel
             buffer_vf = self.v_BR # fixed
-
-            buffer_af = .0
+            buffer_af = 0
 
             _reg = RegistrarProfile(
                 v_in=buffer_vf,
@@ -192,6 +194,7 @@ class KSBSimulation:
                 skipped = slot_idx > prev_slot_idx + 1
                 if skipped:
                     self._u_control.on_skip(t_start_buffer_traj)
+                    inputs_since_skip = 0
 
             abs_t_buffer_start[i] = t_start_buffer_traj
             assigned_slots[i] = slot_idx
@@ -201,6 +204,8 @@ class KSBSimulation:
             registrar_trajectories.append(_reg.trajectory)
 
             prev_slot_idx = slot_idx
+
+            inputs_since_skip += 1
 
         assigned_slot_times = assigned_slots * slot_period
 
