@@ -60,9 +60,9 @@ def main():
     # ── Phase errors ─────────────────────────────────────────────────────────
     print()
     print("=== Phase errors ===")
-    print(f"  φ_u  (pre-buffer, buckets) : mean={result.phi_u.mean():.3f}  "
-          f"std={result.phi_u.std():.3f}  "
-          f"range=[{result.phi_u.min():.3f}, {result.phi_u.max():.3f}]")
+    print(f"  φ_b  (pre-buffer, buckets) : mean={result.phi_b.mean():.3f}  "
+          f"std={result.phi_b.std():.3f}  "
+          f"range=[{result.phi_b.min():.3f}, {result.phi_b.max():.3f}]")
 
     if (result.segment_sync_response):
         print()
