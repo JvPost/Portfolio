@@ -97,7 +97,8 @@ class KSBSimulation:
         self.policy = Policy(input_length=self.input_length, v_min=v_min)
 
         self.j_u_max = self.jmax
-        self.v_u_max = self.Vmax
+        # self.v_u_max = self.Vmax
+        self.v_u_max = float(cfg.get('v_u_max', 2.5))
         self.a_u_max = np.abs(self.v_u_max - self.vu) / (self.Q * self.slot_period)
 
         upstream_control = cfg.get('upstream_control', 'acc')
