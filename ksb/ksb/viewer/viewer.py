@@ -215,20 +215,17 @@ class KSBViewer:
         if self.events is None:
             return {}
 
-        t_out = self.events.t_out   # (n_pairs, N_B)
-        t_in  = self.events.t_in   # (n_pairs, N_B)
+        b = self.events.b
+        n_pairs = b-1
+        t_out = self.events.t_out   # (b, N_B)
+        t_in  = self.events.t_in   # (b, N_B)
         W     = self.events.W      # = t_in - t_out
-
-        n_pairs, N_B = t_out.shape
         overlap = W < 0.0
 
-        lo = np.minimum(t_out, t_in)
-        hi = np.maximum(t_out, t_in)
+        lo = np.minimum(t_out[:-1], t_in[1:])
+        hi = np.maximum(t_out[:-1], t_in[1:])
 
-        next_cap = np.full_like(t_out, np.inf)
-        if n_pairs >= 2:
-            next_cap[:-1, :] = t_out[1:, :]
-
+        next_cap = np.full_like(t_out[:-1], np.inf)
         live      = (lo <= t) & (t <= hi)
         persisted = (t > hi) & (t <= next_cap)
 

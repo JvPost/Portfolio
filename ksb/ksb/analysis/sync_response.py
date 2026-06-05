@@ -49,15 +49,15 @@ class SegmentSyncResponse:
             for k in range(N_B):
                 inp.current_velocity = [float(events.v_out[i, k])]
                 inp.current_acceleration = [float(events.a_out[i, k])]
-                inp.target_velocity = [float(events.v_in[i, k])]
-                inp.target_acceleration = [float(events.a_in[i, k])]
+                inp.target_velocity = [float(events.v_in[i + 1, k])]
+                inp.target_acceleration = [float(events.a_in[i + 1, k])]
 
                 result = otg.calculate(inp, traj)
                 if result != Result.Working:
                     raise RuntimeError(
                         f"Ruckig failed at (i={i}, k={k}): "
                         f"ξ = (v⁻={events.v_out[i, k]:.6g}, a⁻={events.a_out[i, k]:.6g}, "
-                        f"v⁺={events.v_in[i, k]:.6g}, a⁺={events.a_in[i, k]:.6g}), "
+                        f"v⁺={events.v_in[i + 1, k]:.6g}, a⁺={events.a_in[i + 1, k]:.6g}), "
                         f"bounds = [a_max={a_max:.6g}, j_max={j_max:.6g}], "
                         f"result={result}"
                     )
