@@ -47,7 +47,7 @@ def main():
     if len(skips) == 0:
         print("  Skipped slots  : none")
     else:
-        print(f"  Skipped slots  : {len(skips)} skip(s) before item(s) {skips + 1}")
+        print(f"  Skipped slots  : {len(skips)} skip(s) after item(s) {skips}")
 
     # ── Time horizons ────────────────────────────────────────────────────────
     print()

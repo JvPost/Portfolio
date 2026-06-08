@@ -268,7 +268,7 @@ def get_next_slot(
         attempts += 1
 
         # Safety cap: backstop for default-window (unbounded) solvers.
-        if attempts > 20:
+        if attempts > 90:
             raise SlotAssignmentError(
                 f"No feasible slot for input {idx+1}: 20 attempts exhausted"
             )

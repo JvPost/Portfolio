@@ -112,3 +112,234 @@ def plot_kinematic_margin(
         title_suffix=title_suffix,
         standardized=standardized,
     )
+
+
+def plot_pair_profile(
+    values: np.ndarray,
+    skip_indices,
+    *,
+    segments=None,
+    ax: plt.Axes | None = None,
+    ylabel: str = "",
+    title: str = "",
+    figsize: tuple = (20, 4),
+) -> tuple[plt.Figure, plt.Axes]:
+    """Line chart of a per-(pair, segment) quantity averaged over seeds.
+
+    Parameters
+    ----------
+    values:
+        Array of shape (n_seeds, n_pairs, n_segments).  Reduced to mean ± std
+        over axis 0 before plotting.
+    skip_indices:
+        Iterable of pair indices at which to draw red dashed verticals.
+    segments:
+        Iterable of segment indices k to plot.  Defaults to all segments.
+    ax:
+        Axes to draw into.  If None, a new figure is created with *figsize*.
+    ylabel:
+        Y-axis label (LaTeX accepted).
+    title:
+        Axes title (LaTeX accepted).
+    figsize:
+        Figure size passed to ``plt.subplots`` when *ax* is None.
+
+    Returns
+    -------
+    (fig, ax)
+    """
+    values = np.asarray(values)
+    n_segments = values.shape[2]
+    if segments is None:
+        segments = range(n_segments)
+
+    mean_v = values.mean(axis=0)
+    std_v = values.std(axis=0)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
+
+    x = range(1, mean_v.shape[0]+1)
+    for k in segments:
+        ax.plot(x, mean_v[:, k], label=f"k={k}", marker=".")
+        ax.fill_between(
+            x,
+            mean_v[:, k] - std_v[:, k],
+            mean_v[:, k] + std_v[:, k],
+            alpha=0.2,
+        )
+
+    for skip in skip_indices:
+        skip_i = skip+1
+        ax.axvline(x=skip_i, color="red", linestyle="--", linewidth=0.8, alpha=0.7)
+
+        ax.text(skip_i, -.01, str(skip_i), color="red", fontsize=8, ha="center",
+                va="top", transform=ax.get_xaxis_transform())
+
+    ax.set_xlabel("Pair $(i, i+1)$")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.legend()
+
+    return fig, ax
+
+
+def plot_phase_folded_margin(
+    margin: np.ndarray,
+    skip_indices,
+    *,
+    segments=None,
+    ax: plt.Axes | None = None,
+    band: str | None = "std",
+    ylabel: str = "Kinematic margin $M_{i,k}$ (s)",
+    title: str = "",
+    figsize: tuple = (12, 4),
+) -> tuple[plt.Figure, plt.Axes]:
+    """Phase-fold the kinematic margin against pairs-since-last-skip.
+
+    Each pair i is assigned a phase ``p = i - (largest skip index <= i)``
+    (pairs before the first skip use ``p = i``).  This collapses the
+    skip-locked sawtooth in *margin* onto a single mean curve per segment,
+    so cycles of different length are overlaid by phase rather than by
+    absolute pair index.
+
+    Parameters
+    ----------
+    margin:
+        Array of shape (n_pairs, n_segments) — kinematic margin per pair and segment.
+    skip_indices:
+        Sorted iterable of pair indices at which a skip occurs.
+    segments:
+        Iterable of segment indices k to plot.  Defaults to all segments.
+    band:
+        "std" -> shade mean ± std, "iqr" -> shade 25th-75th percentile,
+        None -> no shaded band.  High phase values have fewer samples
+        (cycles vary in length) — the band simply reflects that.
+    ax:
+        Axes to draw into.  If None, a new figure is created with *figsize*.
+    ylabel:
+        Y-axis label (LaTeX accepted).
+    title:
+        Axes title (LaTeX accepted).
+    figsize:
+        Figure size passed to ``plt.subplots`` when *ax* is None.
+
+    Returns
+    -------
+    (fig, ax)
+    """
+    margin = np.asarray(margin)
+    n_pairs, n_segments = margin.shape
+    if segments is None:
+        segments = range(n_segments)
+
+    skips = np.asarray(sorted(skip_indices))
+    phase = np.empty(n_pairs, dtype=int)
+    for i in range(n_pairs):
+        prior = skips[skips <= i]
+        phase[i] = i - prior[-1] if prior.size else i
+    max_phase = phase.max()
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
+
+    for k in segments:
+        ps, means, lowers, uppers = [], [], [], []
+        for p in range(max_phase + 1):
+            values = margin[phase == p, k]
+            if values.size == 0:
+                continue
+            ps.append(p)
+            means.append(values.mean())
+            if band == "std":
+                lowers.append(values.mean() - values.std())
+                uppers.append(values.mean() + values.std())
+            elif band == "iqr":
+                lowers.append(np.percentile(values, 25))
+                uppers.append(np.percentile(values, 75))
+
+        line, = ax.plot(ps, means, marker=".", label=f"k={k}")
+        if band is not None:
+            ax.fill_between(ps, lowers, uppers, color=line.get_color(), alpha=0.2)
+
+    ax.axhline(0, color="black", linewidth=0.8)
+    ax.set_xlabel("Pairs since last skip")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.legend()
+
+    return fig, ax
+
+
+def plot_margin_cdf(
+    margin: np.ndarray,
+    *,
+    segments=None,
+    ax: plt.Axes | None = None,
+    xlabel: str = "Kinematic margin $M$ (s)",
+    ylabel: str = "$P(M < m)$",
+    title: str = "",
+    figsize: tuple = (8, 5),
+) -> tuple[plt.Figure, plt.Axes]:
+    """Empirical CDF of the kinematic margin, one curve per segment.
+
+    Negative margin means the buffer window is too tight to correct
+    kinematically, so the value of a curve at ``m = 0`` is exactly that
+    segment's failure rate ``P(M < 0)``.  Each curve is annotated with this
+    crossing value so the failure rate is readable directly off the plot.
+
+    Parameters
+    ----------
+    margin:
+        Array of shape (n_pairs, n_segments) — kinematic margin per pair and segment.
+    segments:
+        Iterable of segment indices k to plot.  Defaults to all segments.
+    ax:
+        Axes to draw into.  If None, a new figure is created with *figsize*.
+    xlabel, ylabel:
+        Axis labels (LaTeX accepted).
+    title:
+        Axes title (LaTeX accepted).
+    figsize:
+        Figure size passed to ``plt.subplots`` when *ax* is None.
+
+    Returns
+    -------
+    (fig, ax)
+    """
+    margin = np.asarray(margin)
+    n_segments = margin.shape[1]
+    if segments is None:
+        segments = range(n_segments)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
+
+    for k in segments:
+        values = np.sort(margin[:, k])
+        cdf = np.arange(1, values.size + 1) / values.size
+        line, = ax.step(values, cdf, where="post", label=f"k={k}")
+
+        failure_rate = np.mean(values < 0)
+        ax.annotate(
+            f"{failure_rate:.2f}",
+            xy=(0, failure_rate),
+            xytext=(5, -10),
+            textcoords="offset points",
+            color=line.get_color(),
+            fontsize=9,
+        )
+
+    ax.axvline(0, color="black", linestyle="--", linewidth=0.8)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.legend()
+
+    return fig, ax

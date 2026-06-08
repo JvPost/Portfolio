@@ -87,9 +87,7 @@ def compute_segment_events(
     t_out = np.zeros((b, N_B))
     t_in = np.zeros((b, N_B))
     x_out = np.zeros((b, N_B, 3))
-    # a_out = np.zeros((b, N_B))
     x_in = np.zeros((b, N_B, 3))
-    # a_in = np.zeros((b, N_B))
 
     for i in range(b):
         traj = total_trajectories[i]

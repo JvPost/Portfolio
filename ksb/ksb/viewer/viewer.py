@@ -226,6 +226,7 @@ class KSBViewer:
         hi = np.maximum(t_out[:-1], t_in[1:])
 
         next_cap = np.full_like(t_out[:-1], np.inf)
+        next_cap[:-1] = t_out[1:-1]   # segment clears when follower (now leader) exits it
         live      = (lo <= t) & (t <= hi)
         persisted = (t > hi) & (t <= next_cap)
 
@@ -389,8 +390,6 @@ class KSBViewer:
             ("buffer",     (self.x_buf_start + self.x_reg_start) // 2),
             ("downstream", (self.x_dn_start + self.x_right) // 2),
         ]
-        if self.x_dn_start > self.x_reg_start:
-            labels.append(("registrar", (self.x_reg_start + self.x_dn_start) // 2))
         for text, cx in labels:
             surf, _ = font.render(text, ZONE_LABEL_COLOR)
             screen.blit(surf, surf.get_rect(centerx=cx, top=y + 3))
