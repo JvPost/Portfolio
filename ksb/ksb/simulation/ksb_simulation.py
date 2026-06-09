@@ -33,7 +33,8 @@ class KSBSimulation:
 
         self.L_upstream = float(cfg.get("L_upstream", 1.0))
         self.L_buffer = float(cfg.get("L_buffer", 2.0))
-        self.L_reg = float(cfg.get("L_registrar", 3.0))
+
+        self.bd_offset = float(cfg.get("bd_offset", 3.0))
         self.L_downstream = float(cfg.get("L_downstream", 1.0))
 
         self.input_length = float(cfg.get("input_length", 0.32))
@@ -67,16 +68,6 @@ class KSBSimulation:
 
         rate_delta = (self.rd - self.ru)
         self.Q = self.rd / rate_delta if rate_delta != 0 else float('inf')
-
-        eta_v = float(cfg.get("eta_v", 1.16))  # kinematic headroom factor
-        self.v_BR = eta_v * self.vd            # v^{BR} = eta_v * v_d
-
-        _fp_atol = 1e-9  # tolerance for floating-point rounding at the constraint boundary
-
-        assert self.v_BR >= self.vd - _fp_atol, \
-            f"v_buff_out ({self.v_BR}) must be >= v_d ({self.vd}); eta_v >= 1"
-        assert self.v_BR <= self.Vmax + _fp_atol, \
-            f"v_buff_out ({self.v_BR}) exceeds Vmax ({self.Vmax}); reduce eta_v or eta_r/eta_s"
 
         self.slot_period = self.slot_length / self.vd
 
@@ -163,30 +154,30 @@ class KSBSimulation:
             t_start_buffer_traj = t0 + upstream_traj.T 
 
             buffer_xi = upstream_traj.xf
-
-            # buffer_vf = np.clip(buffer_xi[V], 0, self.Vmax) # equalize incoming and outgoing vel
-            buffer_vf = self.v_BR # fixed
             buffer_af = 0
 
-            _reg = RegistrarProfile(
-                v_in=buffer_vf,
-                v_out=self.vd,
-                L_reg=self.L_reg,
-                input_length=self.input_length,
-                j_max=self.jmax,
-                a_max=self.Amax
-            )
-            
-            # duration if all we did is cruise
-            T_no_corr = (self.L_buffer - self.input_length) / buffer_xi[V]
+            # _reg = RegistrarProfile(
+            #     v_in=self.vd,
+            #     v_out=self.vd,
+            #     L_reg=self.bd_offset,
+            #     input_length=self.input_length,
+            #     j_max=self.jmax,
+            #     a_max=self.Amax
+            # )
 
-            #            straddle time                           registrar time
-            t_offset = -((self.input_length / buffer_vf) + _reg.T_total)
+            bd_offset_traj = LinearTrajectory(x0=np.array([0., self.vd, 0.]),
+                                              T = self.bd_offset/self.vd)
+            
+            #            straddle time                   dmz time
+            t_offset = -((self.input_length / self.vd) + bd_offset_traj.T)
+
+            # duration if all we did is cruise
+            T_no_corr = (self.L_buffer + t_offset) / buffer_xi[V]
 
             # compute buffer trajectories
             slot_idx, buffer_traj = utils.get_next_slot(
                 i, t_start_buffer_traj, slot_idx, self.slot_length, buffer_xi[V], 
-                buffer_vf, self.a_u_max, L_buffer_traj, self.input_bounds, 
+                self.vd, self.a_u_max, L_buffer_traj, self.input_bounds, 
                 self.policy, self.solver, t_offset=t_offset, vd_slot=self.vd)
 
             phase_error_buffer[i] = (T_no_corr - buffer_traj.T) / slot_period
@@ -202,7 +193,7 @@ class KSBSimulation:
 
             upstream_trajectories.append(upstream_traj)
             buffer_trajectories.append(buffer_traj)
-            registrar_trajectories.append(_reg.trajectory)
+            registrar_trajectories.append(bd_offset_traj)
 
             prev_slot_idx = slot_idx
 
