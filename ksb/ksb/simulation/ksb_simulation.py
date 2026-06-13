@@ -178,7 +178,7 @@ class KSBSimulation:
             )
             
             # duration if all we did is cruise
-            T_no_corr = (self.L_buffer - self.input_length) / buffer_xi[V]
+            T_no_corr_buffer = (self.L_buffer - self.input_length) / buffer_xi[V]
 
             #            straddle time                           registrar time
             t_offset = -((self.input_length / buffer_vf) + _reg.T_total)
@@ -189,7 +189,7 @@ class KSBSimulation:
                 buffer_vf, self.a_u_max, L_buffer_traj, self.input_bounds, 
                 self.policy, self.solver, t_offset=t_offset, vd_slot=self.vd)
 
-            phase_error_buffer[i] = (T_no_corr - buffer_traj.T) / slot_period
+            phase_error_buffer[i] = (T_no_corr_buffer - buffer_traj.T) / slot_period # (reference - controlled) / slot_period
             
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1
@@ -208,11 +208,10 @@ class KSBSimulation:
 
             inputs_since_skip += 1
 
+        # 4) Phase errors upstream
         assigned_slot_times = assigned_slots * slot_period
-
-        # 4) Phase errors
-        T_no_corr = batch_t_spawn + (L_upstream + self.L_buffer) / vu
-        phase_error_upstream = (assigned_slot_times - T_no_corr) / slot_period
+        T_no_corr_upstream = batch_t_spawn + ((L_upstream + self.L_buffer) / vu)
+        phase_error_upstream = (T_no_corr_upstream - assigned_slot_times) / slot_period # (reference - controlled) / slot_period
 
         # 5) downstream trajectories & construction of the entire history
         total_trajectories: List[CompositeTrajectory] = []
