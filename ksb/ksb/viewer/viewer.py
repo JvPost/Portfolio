@@ -35,7 +35,6 @@ ITEM_PAD = 5          # vertical gap between item rect and lane top/bottom
 BG_COLOR          = (240, 242, 245)
 UPSTREAM_COLOR    = (180, 182, 186)
 BUFFER_COLOR      = (160, 170, 200)
-REGISTRAR_COLOR   = (130, 150, 195)   # slightly deeper blue — transition zone
 DOWNSTREAM_COLOR  = (180, 182, 186)
 ZONE_LINE_COLOR   = (60,  60,  70)
 ZONE_LABEL_COLOR  = (60,  60,  70)
@@ -124,13 +123,11 @@ class KSBViewer:
         # ------------------------------------------------------------------
         self.L_up   = float(cfg.get("L_upstream",   1.0))
         self.L_buf  = float(cfg.get("L_buffer",      2.0))
-        self.L_reg  = float(cfg.get("L_registrar",   0.0))
         self.L_dn   = float(cfg.get("L_downstream",  1.0))
-        self.L_tot  = self.L_up + self.L_buf + self.L_reg + self.L_dn
+        self.L_tot  = self.L_up + self.L_buf + self.L_dn
 
         self.input_length = float(cfg.get("input_length", 0.32))
         self.n_buffer_seg = int(cfg.get("n_buffer_seg", 5))
-        self.n_reg_seg    = int(cfg.get("n_reg_seg", 1))
 
         # Non-uniform segment lengths and cumulative boundary positions (buffer-local coords).
         # Defaults match KSBSimulation.__init__ exactly.
@@ -186,9 +183,8 @@ class KSBViewer:
         self.lane = pygame.Rect(MARGIN, MARGIN, belt_w, LANE_H)
 
         # Zone pixel edges (left x of each zone boundary)
-        self.x_buf_start = MARGIN + _px(self.L_up,                          self.ppm)
-        self.x_reg_start = MARGIN + _px(self.L_up + self.L_buf,             self.ppm)
-        self.x_dn_start  = MARGIN + _px(self.L_up + self.L_buf + self.L_reg, self.ppm)
+        self.x_buf_start = MARGIN + _px(self.L_up,             self.ppm)
+        self.x_dn_start  = MARGIN + _px(self.L_up + self.L_buf, self.ppm)
         self.x_right     = MARGIN + belt_w
 
         # HUD rect
@@ -362,18 +358,6 @@ class KSBViewer:
             px = MARGIN + _px(self.L_up + self._buf_cum[k], self.ppm)
             pygame.draw.line(screen, BUF_SEG_DIV_COLOR, (px, y + 4), (px, y + h - 4), 1)
 
-        # Registrar zone (may be zero-width if L_reg == 0)
-        if self.x_dn_start > self.x_reg_start:
-            r_reg = pygame.Rect(self.x_reg_start, y, self.x_dn_start - self.x_reg_start, h)
-            pygame.draw.rect(screen, REGISTRAR_COLOR, r_reg)
-            # Registrar section dividers
-            if self.n_reg_seg > 1:
-                reg_section_len = self.L_reg / self.n_reg_seg
-                reg_div_color = (90, 100, 155)
-                for k in range(1, self.n_reg_seg):
-                    px = MARGIN + _px(self.L_up + self.L_buf + k * reg_section_len, self.ppm)
-                    pygame.draw.line(screen, reg_div_color, (px, y + 4), (px, y + h - 4), 1)
-
         # Downstream zone
         r_dn = pygame.Rect(self.x_dn_start, y, self.x_right - self.x_dn_start, h)
         pygame.draw.rect(screen, DOWNSTREAM_COLOR, r_dn)
@@ -382,13 +366,13 @@ class KSBViewer:
         pygame.draw.rect(screen, ZONE_LINE_COLOR, lane, width=1)
 
         # Zone boundary lines
-        for bx in (self.x_buf_start, self.x_reg_start, self.x_dn_start):
+        for bx in (self.x_buf_start, self.x_dn_start):
             pygame.draw.line(screen, ZONE_LINE_COLOR, (bx, y), (bx, y + h), 1)
 
         # Zone labels
         labels = [
             ("upstream",   (lane.left + self.x_buf_start) // 2),
-            ("buffer",     (self.x_buf_start + self.x_reg_start) // 2),
+            ("buffer",     (self.x_buf_start + self.x_dn_start) // 2),
             ("downstream", (self.x_dn_start + self.x_right) // 2),
         ]
         for text, cx in labels:
@@ -408,7 +392,7 @@ class KSBViewer:
         k_min = math.ceil((t - self.L_dn / self.vd) / self.slot_period)
         k_max = math.floor(t / self.slot_period)
 
-        dn_origin = self.L_up + self.L_buf + self.L_reg   # B^{RD}
+        dn_origin = self.L_up + self.L_buf   # B^{RD}
         for k in range(k_min, k_max + 1):
             pos = dn_origin + self.vd * (t - k * self.slot_period)
             if pos < dn_origin - 1e-9 or pos > self.L_tot + 1e-9:
@@ -465,7 +449,7 @@ class KSBViewer:
         rects: list,
         colors: list,
     ) -> None:
-        """Faint red band between consecutive pairs flagged red (buffer + registrar zones)."""
+        """Faint red band between consecutive pairs flagged red (buffer zone)."""
         n = self.n_items
         for i in range(n - 1):
             if rects[i] is None or rects[i + 1] is None:

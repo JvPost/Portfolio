@@ -6,7 +6,6 @@ import numpy as np
 
 from ksb.analysis.events import compute_segment_events
 from ksb.analysis.sync_response import SegmentSyncResponse
-from ksb.control.registrar import RegistrarProfile
 from ksb.control.upstream_control import ConstantVelocityControl, UpstreamController, PreAccelerateControl
 from ksb.motion.item_pair import PairRecord, compute_pairs
 from ksb.motion.trajectories import CompositeTrajectory, ConstantJerkTrajectory, LinearTrajectory, TrajectoryProfile, P, V, A
@@ -33,12 +32,10 @@ class KSBSimulation:
 
         self.L_upstream = float(cfg.get("L_upstream", 1.0))
         self.L_buffer = float(cfg.get("L_buffer", 2.0))
-        self.L_reg = float(cfg.get("L_registrar", 3.0))
         self.L_downstream = float(cfg.get("L_downstream", 1.0))
 
         self.input_length = float(cfg.get("input_length", 0.32))
         self.n_buffer_seg = int(cfg.get("n_buffer_seg", 5))
-        self.n_reg_seg = int(cfg.get("n_reg_seg", 5))
 
         Lmin_factor = float(cfg.get("Lmin_factor", 0.25))
         Lmin = Lmin_factor * self.input_length
@@ -67,16 +64,6 @@ class KSBSimulation:
 
         rate_delta = (self.rd - self.ru)
         self.Q = self.rd / rate_delta if rate_delta != 0 else float('inf')
-
-        eta_v = float(cfg.get("eta_v", 1.16))  # kinematic headroom factor
-        self.v_BR = eta_v * self.vd            # v^{BR} = eta_v * v_d
-
-        _fp_atol = 1e-9  # tolerance for floating-point rounding at the constraint boundary
-
-        assert self.v_BR >= self.vd - _fp_atol, \
-            f"v_buff_out ({self.v_BR}) must be >= v_d ({self.vd}); eta_v >= 1"
-        assert self.v_BR <= self.Vmax + _fp_atol, \
-            f"v_buff_out ({self.v_BR}) exceeds Vmax ({self.Vmax}); reduce eta_v or eta_r/eta_s"
 
         self.slot_period = self.slot_length / self.vd
 
@@ -144,7 +131,6 @@ class KSBSimulation:
 
         upstream_trajectories:List[TrajectoryProfile] = []
         buffer_trajectories:List[TrajectoryProfile] = []
-        registrar_trajectories:List[TrajectoryProfile] = []
 
         slot_idx = 0
         prev_slot_idx = None
@@ -165,29 +151,17 @@ class KSBSimulation:
             buffer_xi = upstream_traj.xf
 
             # buffer_vf = np.clip(buffer_xi[V], 0, self.Vmax) # equalize incoming and outgoing vel
-            buffer_vf = self.v_BR # fixed
+            buffer_vf = self.vd # fixed
             buffer_af = 0
 
-            _reg = RegistrarProfile(
-                v_in=buffer_vf,
-                v_out=self.vd,
-                L_reg=self.L_reg,
-                input_length=self.input_length,
-                j_max=self.jmax,
-                a_max=self.Amax
-            )
-            
             # duration if all we did is cruise
             T_no_corr_buffer = (self.L_buffer - self.input_length) / buffer_xi[V]
 
-            #            straddle time                           registrar time
-            t_offset = -((self.input_length / buffer_vf) + _reg.T_total)
-
             # compute buffer trajectories
             slot_idx, buffer_traj = utils.get_next_slot(
-                i, t_start_buffer_traj, slot_idx, self.slot_length, buffer_xi[V], 
-                buffer_vf, self.a_u_max, L_buffer_traj, self.input_bounds, 
-                self.policy, self.solver, t_offset=t_offset, vd_slot=self.vd)
+                i, t_start_buffer_traj, slot_idx, self.slot_length, buffer_xi[V],
+                buffer_vf, self.a_u_max, L_buffer_traj, self.input_bounds,
+                self.policy, self.solver, vd_slot=self.vd)
 
             phase_error_buffer[i] = (T_no_corr_buffer - buffer_traj.T) / slot_period # (reference - controlled) / slot_period
             
@@ -202,7 +176,6 @@ class KSBSimulation:
 
             upstream_trajectories.append(upstream_traj)
             buffer_trajectories.append(buffer_traj)
-            registrar_trajectories.append(_reg.trajectory)
 
             prev_slot_idx = slot_idx
 
@@ -227,12 +200,10 @@ class KSBSimulation:
                 T=T_straddle_BR,
             )
 
-            reg_traj = registrar_trajectories[i]
-
             total_T = (
-                upstream_trajectories[i].T 
+                upstream_trajectories[i].T
                 + T_buffer + T_straddle_BR # buffer + straddle
-                + reg_traj.T + downstream_T # after buffer
+                + downstream_T # after buffer
             )
 
             d_traj = self._d_solver.solve(
@@ -247,7 +218,6 @@ class KSBSimulation:
                     upstream_trajectories[i],
                     buffer_trajectories[i],
                     straddle_traj_BR,
-                    reg_traj,
                     d_traj,
                 ),
             )

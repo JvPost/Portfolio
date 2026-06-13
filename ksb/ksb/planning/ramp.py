@@ -1,5 +1,4 @@
-"""Jerk-limited velocity-ramp primitive shared by the s-curve solver and
-the registrar deceleration profile.
+"""Jerk-limited velocity-ramp primitive used by the s-curve solver.
 
 A ramp is a 3-phase transition v_a -> v_b under bounded jerk and
 acceleration:
@@ -39,8 +38,7 @@ def ramp(v_a: float, v_b: float, j_max: float, a_max: float) -> RampKinematics:
 
     Returns durations of the three phases, total displacement, and the
     direction sign. Tolerances and formulae match the previous inlined
-    implementations in SCurveSolver._ramp and
-    RegistrarProfile._build_decel_segments byte-for-byte.
+    implementation in SCurveSolver._ramp byte-for-byte.
     """
     dv = abs(v_b - v_a)
     if dv < 1e-12:

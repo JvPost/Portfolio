@@ -25,7 +25,8 @@
       "Bash(tee /tmp/opt_run3.log)",
       "Bash(tee /tmp/opt_run4.log)",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(list\\(d.keys\\(\\)\\)\\)\")",
-      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)\\)\")"
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)\\)\")",
+      "Bash(SDL_VIDEODRIVER=dummy conda run -n ksb python -c ' *)"
     ]
   }
 }

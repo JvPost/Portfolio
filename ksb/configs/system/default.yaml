@@ -18,26 +18,20 @@ jmax: 100.0
 Vmax: 3.5
 Amax: 8.5
 beta: 0.0
-gamma: 0
+gamma: -1
 
 solver: ruckig
 L_buffer: 2.5
 n_buffer_seg: 7
-# eta_v: 1.9875 # kinematic headroom: v^{BR} = eta_v * v_d
-eta_v: 1.0
 
 v_min: 0.0 # planner-imposed velocity floor (m/s); 0 means no floor
 start_margin: 1 # the fraction of the input length, that must be on the buffer, before buffer control may commence.
 end_margin: 0.0
 
-# registrar
-L_registrar: 0.33
-n_reg_seg: 1
-
 # downstream
 L_downstream: 2.0
 eta_s: 2.0 # slot_length = eta_s * input_length
-eta_r: 1.10 # slot_rate   = eta_r * arrival_rate_ppm
+eta_r: 1.5 # slot_rate   = eta_r * arrival_rate_ppm
 
 # \pi^S bounds
 a_max_sync: 25.0

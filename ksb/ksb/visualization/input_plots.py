@@ -99,7 +99,7 @@ class InputPlotter:
 
         Figure layout: N rows × 5 columns
           col 0 — position (m)         ┐
-          col 1 — velocity (m/s)       │  buffer + straddle + registrar trajectory for input i
+          col 1 — velocity (m/s)       │  buffer + straddle trajectory for input i
           col 2 — acceleration (m/s²)  │
           col 3 — jerk (m/s³)          ┘  [blank if unsupported by segment type]
           col 4 — g_i(t): gap between input i and input i+1 (m)
@@ -125,21 +125,16 @@ class InputPlotter:
             axes[0, col].set_title(label, fontsize=11)
 
         for i in range(N):
-            # Segments: [0]=upstream, [1]=buffer, [2]=straddle, [3]=registrar, [4]=downstream
+            # Segments: [0]=upstream, [1]=buffer, [2]=straddle, [3]=downstream
             segs = result.system_trajectories[i + i_start].segments
             buff_traj = segs[1]
             straddle_traj = segs[2]
-            reg_traj = segs[3]
 
             combined_traj = CompositeTrajectory(
                 x0=buff_traj.x0,
-                T=buff_traj.T + straddle_traj.T + reg_traj.T,
-                segments=(buff_traj, straddle_traj, reg_traj),
+                T=buff_traj.T + straddle_traj.T,
+                segments=(buff_traj, straddle_traj),
             )
-
-            # Boundary times within combined_traj for shading
-            t_straddle_start = buff_traj.T
-            t_registrar_start = buff_traj.T + straddle_traj.T
 
             # ── Kinematics ──────────────────────────────────────────────
             t = np.linspace(0.0, combined_traj.T, n_samples)
@@ -152,9 +147,7 @@ class InputPlotter:
             )
 
             def _shade(ax):
-                """Shade straddle, registrar, and buffer regions."""
-                ax.axvspan(t_registrar_start, combined_traj.T,
-                           alpha=0.10, color='C3', label='registrar')
+                """Shade buffer regions."""
                 self._shade_buffer(ax, buff_traj, t, states)
 
             # col 0 — position
