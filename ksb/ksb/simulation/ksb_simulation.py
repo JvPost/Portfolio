@@ -84,21 +84,24 @@ class KSBSimulation:
         self.policy = Policy(input_length=self.input_length, v_min=v_min)
 
         self.j_u_max = self.jmax
-        # self.v_u_max = self.Vmax
-        self.v_u_max = float(cfg.get('v_u_max', 2.5))
-        self.a_u_max = np.abs(self.v_u_max - self.vu) / (self.Q * self.slot_period)
 
-        upstream_control = cfg.get('upstream_control', 'acc')
-        if (upstream_control == "acc"):
+        self.v_u_max = self.Vmax
+        # self.v_u_max = float(cfg.get('v_u_max', 2.5))
+        # self.v_u_max = self.vd
+
+        # self.a_u_max = self.Amax
+        self.a_u_max = np.abs(self.v_u_max - self.vu) / (self.Q * self.slot_period)
+        # self.a_u_max = np.min([self.a_u_max, self.Amax])
+
+        self.upstream_control = cfg.get('upstream_control', 'const')
+        if (self.upstream_control == "acc"):
             self._u_control = PreAccelerateControl(vu=self.vu, 
                                                 j_u_max=self.j_u_max,
                                                 a_max=self.Amax, 
                                                 a_u_max=self.a_u_max,
                                                 v_u_max=self.v_u_max,
                                                 )
-        elif (upstream_control == "constant"):
-            self._u_control = ConstantVelocityControl(self.vu)
-        elif (upstream_control == "const"):
+        elif (self.upstream_control in ["constant", 'const']):
             self._u_control = ConstantVelocityControl(self.vu)
         else:
             raise KeyError("Unknown upstream control")
@@ -140,8 +143,8 @@ class KSBSimulation:
         L_buffer_traj = self.L_buffer - self.input_length
 
         phase_error_buffer = np.empty(self.batch, dtype=float)
+        phase_error_upstream = np.empty(self.batch, dtype=float)
 
-        inputs_since_skip = 0
         for i, t0 in enumerate(batch_t_spawn):
             
             upstream_traj:TrajectoryProfile = self._u_control.subsection(t0, L_upstream_traj)
@@ -157,19 +160,29 @@ class KSBSimulation:
             # duration if all we did is cruise
             T_no_corr_buffer = (self.L_buffer - self.input_length) / buffer_xi[V]
 
+            ai = 0 if self.upstream_control == 'const' else self.a_u_max
             # compute buffer trajectories
             slot_idx, buffer_traj = utils.get_next_slot(
                 i, t_start_buffer_traj, slot_idx, self.slot_length, buffer_xi[V],
-                buffer_vf, self.a_u_max, L_buffer_traj, self.input_bounds,
-                self.policy, self.solver, vd_slot=self.vd)
+                buffer_vf, ai, L_buffer_traj, self.input_bounds,
+                self.policy, self.solver)
 
-            phase_error_buffer[i] = (T_no_corr_buffer - buffer_traj.T) / slot_period # (reference - controlled) / slot_period
+            phase_error_b_i = (T_no_corr_buffer - buffer_traj.T) / slot_period # (reference - controlled) / slot_period
             
+            # same as phase_error_b_i, but with upstream included
+            phase_error_u_i = \
+                ((t0 + (self.L_upstream + self.L_buffer) / self.vu) - # reference - 
+                 (slot_idx * slot_period) # controlled
+                 ) / slot_period # / slot_period
+
+            phase_error_buffer[i] = phase_error_b_i
+            phase_error_upstream[i] = phase_error_u_i
+
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1
-                if skipped:
+                if not skipped:
                     self._u_control.on_skip(t_start_buffer_traj)
-                    inputs_since_skip = 0
+
 
             abs_t_buffer_start[i] = t_start_buffer_traj
             assigned_slots[i] = slot_idx
@@ -179,14 +192,7 @@ class KSBSimulation:
 
             prev_slot_idx = slot_idx
 
-            inputs_since_skip += 1
-
-        # 4) Phase errors upstream
-        assigned_slot_times = assigned_slots * slot_period
-        T_no_corr_upstream = batch_t_spawn + ((L_upstream + self.L_buffer) / vu)
-        phase_error_upstream = (T_no_corr_upstream - assigned_slot_times) / slot_period # (reference - controlled) / slot_period
-
-        # 5) downstream trajectories & construction of the entire history
+        # 4) downstream trajectories & construction of the entire history
         total_trajectories: List[CompositeTrajectory] = []
         downstream_T = L_downstream / vd
 
@@ -225,7 +231,7 @@ class KSBSimulation:
             total_trajectories.append(comp_traj)
 
         #
-        # 6) segment events
+        # 5) segment events
         #
         segment_events = None
         segment_sync_response = None

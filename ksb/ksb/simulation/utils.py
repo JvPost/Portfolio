@@ -223,7 +223,6 @@ def get_next_slot(
     policy: Policy,
     solver: IProfileSolver,
     t_offset: float = 0.0,
-    vd_slot: Optional[float] = None,
 ) -> Tuple[int, TrajectoryProfile]:
     """Assign a single input to the earliest feasible slot index.
 
@@ -258,7 +257,7 @@ def get_next_slot(
     Raises:
         SlotAssignmentError: on window-empty, window-exhausted, or cap failure.
     """
-    slot_period = slot_length / (vd_slot if vd_slot is not None else vf)
+    slot_period = slot_length / vf
 
     attempts = 0
     k = slot_idx

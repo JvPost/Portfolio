@@ -279,6 +279,7 @@ def plot_margin_cdf(
     margin: np.ndarray,
     *,
     segments=None,
+    band: bool = True,
     ax: plt.Axes | None = None,
     xlabel: str = "Kinematic margin $M$ (s)",
     ylabel: str = "$P(M < m)$",
@@ -298,6 +299,10 @@ def plot_margin_cdf(
         Array of shape (n_pairs, n_segments) — kinematic margin per pair and segment.
     segments:
         Iterable of segment indices k to plot.  Defaults to all segments.
+    band:
+        If True, shade a ±1 std band around each ECDF curve, where the std
+        at each point is the binomial standard error ``sqrt(F(1-F)/n)`` of
+        the empirical CDF estimate.
     ax:
         Axes to draw into.  If None, a new figure is created with *figsize*.
     xlabel, ylabel:
@@ -323,8 +328,20 @@ def plot_margin_cdf(
 
     for k in segments:
         values = np.sort(margin[:, k])
-        cdf = np.arange(1, values.size + 1) / values.size
+        n = values.size
+        cdf = np.arange(1, n + 1) / n
         line, = ax.step(values, cdf, where="post", label=f"k={k}")
+
+        if band:
+            se = np.sqrt(cdf * (1 - cdf) / n)
+            ax.fill_between(
+                values,
+                np.clip(cdf - se, 0, 1),
+                np.clip(cdf + se, 0, 1),
+                step="post",
+                color=line.get_color(),
+                alpha=0.2,
+            )
 
         failure_rate = np.mean(values < 0)
         ax.annotate(
