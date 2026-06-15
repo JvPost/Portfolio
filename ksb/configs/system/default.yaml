@@ -2,7 +2,7 @@
 batch: 100
 input_length: 0.32
 input_gap_mean: 0.6
-input_gap_std: 0.05
+input_gap_std: 0.10
 input_gap_rho: 0.0
 arrival_rate_ppm: 150
 

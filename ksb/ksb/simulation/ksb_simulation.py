@@ -85,12 +85,12 @@ class KSBSimulation:
 
         self.j_u_max = self.jmax
 
-        self.v_u_max = self.Vmax
+        # self.v_u_max = self.Vmax
         # self.v_u_max = float(cfg.get('v_u_max', 2.5))
-        # self.v_u_max = self.vd
+        self.v_u_max = self.vd
 
-        # self.a_u_max = self.Amax
-        self.a_u_max = np.abs(self.v_u_max - self.vu) / (self.Q * self.slot_period)
+        self.a_u_max = self.Amax
+        # self.a_u_max = np.abs(self.v_u_max - self.vu) / (self.Q * self.slot_period)
         # self.a_u_max = np.min([self.a_u_max, self.Amax])
 
         self.upstream_control = cfg.get('upstream_control', 'const')
@@ -181,7 +181,8 @@ class KSBSimulation:
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1
                 if not skipped:
-                    self._u_control.on_skip(t_start_buffer_traj)
+                    # self._u_control.on_skip(t_start_buffer_traj)
+                    self._u_control.on_skip(abs_t_buffer_start[i-1])
 
 
             abs_t_buffer_start[i] = t_start_buffer_traj
