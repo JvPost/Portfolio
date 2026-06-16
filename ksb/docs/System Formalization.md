@@ -6,14 +6,16 @@ The pipeline consists of four stages in series:
 
 |Stage|Label|Length|Nominal exit velocity|
 |---|---|---|---|
-|Upstream|$U$|$L^U$|$v^{UB}$|
-|KSB (buffer)|$B$|$L^B$|$v^{BR}$|
-|Registration|$R$|$L^R$|$v^{RD}$|
-|Downstream|$D$|$L^D$|$v^{RD}$|
+|Upstream|$U$|—|$v_u$|
+|Conditioning|$C$|$L^C$|$v_c$|
+|KSB (buffer)|$B$|$L^B$|$v_d$|
+|Downstream|$D$|$L^D$|$v_d$|
 
-where $v^{UB} \equiv v_u$ is the upstream belt speed and $v^{RD} \equiv v_d$ is the downstream belt speed. These are retained as $v_u$ and $v_d$ where the context is unambiguous. $v^{BR}$ is the KSB exit velocity, mechanically decoupled from both $v_u$ and $v_d$.
+The **upstream** stage $U$ is a pure source: it spawns inputs according to the stochastic pitch process and does nothing kinematic. It has no control length and runs at the nominal spawn velocity $v_u$ implied by the pitch process. It is the first stage by convention so that everything kinematic happens _after_ a clean stochastic source.
 
-The registration stage is subdivided into $N^R$ segments of equal length $L^R / N^R$. Dwell-time inequality across segments is absorbed by per-segment deceleration weights, not by segment length (see _Registrar formalization_ §3.1).
+The **conditioning** stage $C$ is where all upstream kinematic work happens. It runs at a nominal velocity $v_c > v_u$, which serves two purposes: it statically stretches the incoming pitch by the ratio $\eta_c = v_c / v_u$ (more spacing into the buffer — more time, more margin), and it carries the event-triggered feedforward controller that shapes velocity around skips. The detailed formalization is in _Conditioning formalization_ (formerly _Upstream formalization_).
+
+The **buffer** stage $B$ exits directly at the downstream velocity $v_d$. The earlier KSB exit velocity $v^{BR}$ and the registration stage have been removed: the buffer is mechanically tied to deliver inputs at $v_d$, with no intermediate registration belt.
 
 Input length is $l_i$ (uniform across batch, written $l$ where unambiguous).
 
@@ -27,18 +29,13 @@ $$\mathcal{B}^k = (P^k,; v^k)$$
 
 |Boundary|Position|Crossing velocity|
 |---|---|---|
-|$\mathcal{B}^{UB}$|$P^{UB} = L^U$|$v^{UB} = v_u$|
-|$\mathcal{B}^{BR}$|$P^{BR} = L^U + L^B$|$v^{BR}$|
-|$\mathcal{B}^{R,n}$|$P^{R,n} = P^{BR} + \sum_{k=1}^{n} L^{R,k}$|$v^{R,n}$|
-|$\mathcal{B}^{RD}$|$P^{RD} = P^{BR} + L^R$|$v^{RD} = v_d$|
+|$\mathcal{B}^{UC}$|$P^{UC} = 0$|$v^{UC} = v_u$|
+|$\mathcal{B}^{CB}$|$P^{CB} = L^C$|$v^{CB} = v_c$|
+|$\mathcal{B}^{BD}$|$P^{BD} = L^C + L^B$|$v^{BD} = v_d$|
 
-Every crossing velocity is a **design constant**. Setting it determines both the exit constraint of the upstream stage and the entry constraint of the downstream stage simultaneously.
+Every crossing velocity is a **design constant**. Setting it determines both the exit constraint of the stage before and the entry constraint of the stage after, simultaneously.
 
-For registration sub-boundaries under weighted velocity allocation:
-
-$$ v^{R,n} = v^{BR} - \left(\sum_{k=1}^{n} w_k\right)(v^{BR} - v_d) $$
-
-with weights satisfying $w_1 < w_2 < \cdots < w_{N^R}$ and $\sum_{n=1}^{N^R} w_n = 1$. The weights are design parameters configured per scenario; uniform weights $w_n = 1/N^R$ recover the special case of evenly-distributed deceleration.
+The source/conditioning boundary $\mathcal{B}^{UC}$ is where inputs leave the pure source and enter the conditioning belt. Because $U$ is kinematically inert, an input crosses $\mathcal{B}^{UC}$ at the spawn velocity $v_u$. The conditioning belt then carries it to $\mathcal{B}^{CB}$, where it crosses into the buffer at $v_c$ — the static stretch is realized over $L^C$ as the faster belt spreads the spacing. The buffer delivers to $\mathcal{B}^{BD}$ at $v_d$.
 
 ---
 
@@ -54,13 +51,15 @@ During the straddling window:
 
 $$v_i(t) = v^k \qquad \forall, t \in [t_i^{k,\text{lead}},; t_i^{k,\text{trail}}].$$
 
+The composite per-input trajectory is now **four segments**: conditioning, buffer, straddle, downstream. (The straddle term is what remains of the former `t_offset` after the registrar carry was removed.)
+
 ---
 
-## 4. Upstream Arrivals
+## 4. The Source and the Pitch Process
 
-The upstream conveyor delivers a sequence of inputs to $\mathcal{B}^{UB}$. The arrival process is the **only** stochastic object in the pipeline; everything downstream is deterministic conditional on the arrival realization.
+The upstream source $U$ delivers a sequence of inputs to $\mathcal{B}^{UC}$. The arrival process is the **only** stochastic object in the pipeline; everything downstream is deterministic conditional on the arrival realization.
 
-**Parameters.** Four parameters specify the arrival process:
+**Parameters.** Four parameters specify the source process:
 
 |Symbol|Meaning|Units|
 |---|---|---|
@@ -69,7 +68,7 @@ The upstream conveyor delivers a sequence of inputs to $\mathcal{B}^{UB}$. The a
 |$\sigma_u$|Upstream pitch standard deviation|m|
 |$\rho_u$|Pitch-process autocorrelation|—|
 
-The implied mean upstream conveyor velocity is $v_u = r_u \mu_u$. It is a derived statistic, not an independent parameter.
+The spawn velocity $v_u = r_u \mu_u$ is a **derived statistic of the source**, not an independent control parameter. This is the key change from the earlier model: velocity is no longer the controllable upstream quantity. The source owns the pitch statistics; the _conditioning_ stage owns velocity. Decoupling them is what allows pitch into the buffer to be stretched (via $v_c$) without touching the stochastic pitch process itself.
 
 **Distributional model.** Pitches are generated by an AR(1) process in log-space:
 
@@ -79,7 +78,23 @@ with $\mu_y$ and $\sigma_\varepsilon$ chosen so that the marginal pitch $p_i$ ha
 
 ---
 
-## 5. Downstream Slots
+## 5. Conditioning
+
+The conditioning stage $C$ converts the source's spawn velocity $v_u$ into the buffer entry velocity $v_c$, and shapes the boundary conditions each input presents at $\mathcal{B}^{CB}$. It has two levers.
+
+**Static stretch.** Running the conditioning belt at $v_c > v_u$ stretches the spacing of every input by the ratio
+
+$$\eta_c = \frac{v_c}{v_u} \ge 1,$$
+
+so the mean pitch entering the buffer is $\eta_c \mu_u$. More spacing means more free window and more kinematic margin at the early (entry-edge) segments — the entry-edge analogue of what the downstream rate ratio does for the exit edge. The stretch is static and global: it shifts the _mean_ of the pitch-into-buffer distribution but not its shape. $v_c$ is bounded above by the physical belt speed limit and, where it sets buffer entry velocity, by the buffer's own $v_{\max}$.
+
+**Reactive shaping.** On top of the static baseline $v_c$, the conditioning controller adjusts velocity around events via a feedforward jerk timeline. The detailed treatment is in _Conditioning formalization_. The controller is open-loop and event-triggered: it computes corrections analytically from known events, not from a measured error. The existing skip-triggered policy (accelerate before a skip, decelerate after) and the planned anti-cluster policy (slow an input locally when two consecutive slots are filled, to add pitch reactively where co-occupancy pressure is highest) both live here. Where the static stretch widens spacing globally, the reactive policy widens it locally and on demand.
+
+The conditioning belt's nominal velocity $v_c$, its speed ceiling, and the velocity gap to the source ($v_c - v_u$) are the design parameters of this stage.
+
+---
+
+## 6. Downstream Slots
 
 The downstream side of the pipeline runs at constant belt velocity $v_d$ and presents a fixed pattern of slots into which inputs must be delivered. The pattern is fully deterministic.
 
@@ -89,23 +104,23 @@ The downstream side of the pipeline runs at constant belt velocity $v_d$ and pre
 |$\mu_d$ (or $d_s$)|Slot pitch (center-to-center spacing of slots)|m|
 |$v_d$|Slot pattern velocity, $v_d = r_d \mu_d$|m/s|
 
-Slot $s$ passes $\mathcal{B}^{RD}$ at time $s/r_d$ for $s = 0, 1, 2, \ldots$, with the slot's position $p^\text{slot}_s(t)$ tracking the pattern at velocity $v_d$ for all $t$.
+Slot $s$ passes $\mathcal{B}^{BD}$ at time $s/r_d$ for $s = 0, 1, 2, \ldots$, with the slot's position $p^\text{slot}_s(t)$ tracking the pattern at velocity $v_d$ for all $t$.
 
-The slot pattern specifies _which slots exist_. The assignment of inputs to slots — _which input goes to which slot_ — is a separate scheduling decision, treated in §6.
+The slot pattern specifies _which slots exist_. The assignment of inputs to slots — _which input goes to which slot_ — is a separate scheduling decision, treated in §7.
 
 ---
 
-## 6. Slot Assignment and the Skip Mechanism
+## 7. Slot Assignment and the Skip Mechanism
 
 **Greedy slot assignment.** Input $i$ is assigned to the earliest slot index $s_i$ that is both
 
-(a) strictly later than the previous input's assignment, $s_i > s_{i-1}$, and (b) feasible under $\pi^I$'s kinematic budget given the input's entry state at $\mathcal{B}^{UB}$, the slot's arrival timing, and the buffer's available control window $T_i^B$.
+(a) strictly later than the previous input's assignment, $s_i > s_{i-1}$, and (b) feasible under $\pi^I$'s kinematic budget given the input's entry state at $\mathcal{B}^{CB}$, the slot's arrival timing, and the buffer's available control window $T_i^B$.
 
 Constraint (a) preserves order — inputs cannot swap slots — and constraint (b) is the kinematic feasibility test: can the buffer trajectory $\pi^I$ deliver input $i$ to slot $s_i$ on time, given its entry kinematics and the slot's downstream timing?
 
 The policy is **greedy**: the earliest slot passing both constraints is always chosen, with no global lookahead and no reservation across inputs. Operationally, the slot picker bounds its search using $\pi^I$'s feasibility window (the range of time horizons $T$ for which the solver can produce a trajectory) and walks forward through candidate slots $s_{i-1} + 1, s_{i-1} + 2, \ldots$ until the first feasible one is found.
 
-**Skips.** A skip is the event where input $i$ is assigned to slot $s_i > s_{i-1} + 1$ — one or more slots between the two assignments go unfilled. Slot $s_{i-1} + 1$ was tried, found kinematically infeasible, and skipped; slot $s_{i-1} + 2$ may also have been skipped; and so on, until the picker landed on a feasible slot. The **skip count** for input $i$ is $s_i - s_{i-1} - 1 \geq 0$, zero in the typical case and one or more when slots go unfilled.
+**Skips.** A skip is the event where input $i$ is assigned to slot $s_i > s_{i-1} + 1$ — one or more slots between the two assignments go unfilled. Slot $s_{i-1} + 1$ was tried, found kinematically infeasible, and skipped; and so on, until the picker landed on a feasible slot. The **skip count** for input $i$ is $s_i - s_{i-1} - 1 \geq 0$, zero in the typical case and one or more when slots go unfilled.
 
 Skips are not actively scheduled. They are the emergent consequence of greedy assignment running up against the kinematic feasibility wall.
 
@@ -119,24 +134,24 @@ $$Q = \frac{1}{1 - \rho}.$$
 
 Both $1 - \rho$ and $Q$ depend only on the mean rates and are invariant under changes in $\sigma_u$ or $\rho_u$.
 
-**Phase error.** The pressure that drives skips is captured by the phase error $\phi_i$: the signed timing offset between input $i$'s arrival at $\mathcal{B}^{UB}$ and its nearest available downstream slot, expressed in units of slot periods $1/r_d$. A phase error of zero means the input arrives exactly in phase with a slot; $\phi_i = +0.5$ means it arrives halfway between two slots.
+**Phase error.** The pressure that drives skips is captured by the phase error $\phi_i$. Framed as a PLL: the upstream stream is the reference oscillator ($r_u$), the slot grid is the controlled oscillator ($r_d$), $\rho = r_u/r_d$, and a skip is a cycle slip. $\phi$ is defined reference-minus-controlled and references the _assigned_ slot, not the nearest. The loop is open: the slot grid is free-running and fixed, with no loop filter. Both the buffer-side and upstream-side phase definitions ($\phi_b$, $\phi_u$) measure the same accumulated phase from opposite ends of the same transaction; under linear conditioning they are conserved ($\phi_u + \phi_b \approx$ const).
 
-Between skip events, $\phi_i$ drifts upward at rate $r_d - r_u$ per input — because slots arrive faster than inputs, each successive input arrives progressively later relative to its assigned slot. This produces a characteristic sawtooth: a gradual upward ramp in $\phi_i$ as the kinematic budget is progressively eaten into, followed by a downward jump of approximately one slot period when a skip occurs and the picker advances to a later slot. The kinematic feasibility test sets the height of the sawtooth — phase errors below the feasibility ceiling allow greedy assignment to continue; phase errors at or above it force a skip.
+Between skip events, $\phi_i$ drifts upward at rate $r_d - r_u$ per input, producing a characteristic sawtooth: a gradual upward ramp as the kinematic budget is eaten into, followed by a downward jump of approximately one slot period when a skip advances the picker to a later slot. $\phi$ is retained as an **analysis tool** — a measure of how hard the buffer is working — not as a load-bearing control object.
 
-**Individual skip intervals.** The mean skip interval $Q$ is fixed by $\rho$ alone. Individual intervals are not. Under low arrival variability ($\sigma_u \approx 0$), skips occur almost periodically — every $Q$ inputs, with only minor fluctuation. The phase drift is smooth and the sawtooth is regular. Under high variability, individual inputs arrive early or late relative to $\mu_u$, perturbing the phase trajectory: an input arriving earlier than expected reduces $\phi_i$, delaying the next skip; one arriving later increases $\phi_i$, triggering one sooner. Individual skip intervals become a distribution around $Q$ with spread growing with $\sigma_u$, while the long-run average remains exactly $Q$. Under AR(1) arrivals ($\rho_u > 0$), this distribution acquires additional structure: clusters of large pitches tend to delay skips for several inputs in a row, then a cluster of small pitches triggers several skips in quick succession.
+**Individual skip intervals.** The mean skip interval $Q$ is fixed by $\rho$ alone; individual intervals are not. Under low arrival variability ($\sigma_u \approx 0$), skips occur almost periodically. Under high variability, individual inputs arrive early or late, scattering individual intervals into a distribution around $Q$ with spread growing in $\sigma_u$, while the long-run average stays exactly $Q$. Under AR(1) arrivals ($\rho_u > 0$), the distribution acquires clustering: runs of large pitches delay skips, then runs of small pitches trigger several in quick succession.
 
-The two regimes have direct consequences for downstream stages. In the low-$\sigma_u$ regime, the boundary conditions inherited by the buffer at $\mathcal{B}^{UB}$ are predictable in both timing and magnitude — kinematic pressure on the buffer's edge segments is clustered and forecastable. In the high-$\sigma_u$ regime, the same mechanism operates but scatters its expression across batch position; the long-run total pressure is unchanged but its distribution is dispersed.
+The two regimes have direct consequences downstream. In the low-$\sigma_u$ regime the boundary conditions inherited by the buffer are predictable in timing and magnitude — edge pressure is clustered and forecastable. In the high-$\sigma_u$ regime the same total pressure is dispersed across batch position.
 
 ---
 
-## 7. Per-Input Control Windows
+## 8. Per-Input Control Windows
 
 For each input $i$ on stage $S$:
 
 |Symbol|Meaning|
 |---|---|
 |$t_i^{S,\text{ctrl-start}}$|Time trailing edge clears the entry boundary — control starts|
-|$t_i^{S,\text{ctrl-end}}$|Time leading edge reaches the exit boundary — control must be complete|
+|$t_i^{S,\text{ctrl-end}}$|Time leading edge reaches the exit boundary — control complete|
 |$T_i^S = t_i^{S,\text{ctrl-end}} - t_i^{S,\text{ctrl-start}}$|Control window duration|
 |$\Lambda^S = L^S - l_i$|Effective control length|
 
@@ -144,21 +159,15 @@ The solver for stage $S$ on input $i$ receives:
 
 $$\left(\Lambda^S,; v^{k_\text{in}},; v^{k_\text{out}},; T_i^S,; \text{bounds}\right)$$
 
-where $v^{k_\text{in}}$ and $v^{k_\text{out}}$ are the crossing velocities of the entry and exit boundaries of stage $S$. These are design constants — the solver never has to discover them.
-
-For registration segment $n$:
-
-$$ \Lambda^{R,n} = L^R/N^R - l_i, \qquad v^{k_\text{in}} = v^{R,n-1}, \qquad v^{k_\text{out}} = v^{R,n} $$
-
-with the hard requirement $L^R / N^R > l_i$.
+where $v^{k_\text{in}}$ and $v^{k_\text{out}}$ are the crossing velocities of the entry and exit boundaries of stage $S$. These are design constants — the solver never has to discover them. For the buffer, $v^{k_\text{in}} = v_c$ and $v^{k_\text{out}} = v_d$.
 
 ---
 
-## 8. Entry State at Each Stage
+## 9. Entry State at Each Stage
 
 The **entry state** $\mathbf{x}_i^S$ is the kinematic state of input $i$ at $t_i^{S,\text{ctrl-start}}$:
 
-$$\mathbf{x}_i^S = \begin{bmatrix} 0 \ v^{k_\text{in}} \ 0 \end{bmatrix}^T.$$
+$$\mathbf{x}_i^S = \begin{bmatrix} 0 & v^{k_\text{in}} & 0 \end{bmatrix}^T.$$
 
 - Position is zero (delta semantics — each stage uses its own local frame).
 - Velocity is exactly $v^{k_\text{in}}$ by the straddling constraint.
@@ -168,43 +177,46 @@ Every solver therefore receives $a = 0$ at entry and must deliver $a = 0$ at exi
 
 ---
 
-## 9. The Three Policies
+## 10. The Policies
 
-The pipeline is driven by three named policies and one implied per-segment control. A **policy** is a function from boundary conditions, time horizon, and kinematic constraints to a commanded trajectory — not the trajectory itself, but the rule that generates one. The greedy slot assignment of §6 is a separate scheduling object that produces one of $\pi^I$'s inputs (the time horizon $T_i^B$); it is not a policy in this sense.
+The pipeline is driven by named policies and one implied per-segment control. A **policy** is a function from boundary conditions, time horizon, and kinematic constraints to a commanded trajectory — not the trajectory itself, but the rule that generates one. The greedy slot assignment of §7 is a separate scheduling object that produces one of $\pi^I$'s inputs (the time horizon $T_i^B$); it is not a policy in this sense.
 
-**$\pi^U$ — Upstream policy.** Operates on the upstream conveyor, before the buffer. The detailed formalization is in _Upstream formalization_. $\pi^U$ shapes upstream velocity around skip events via a feedforward jerk timeline: it accelerates the belt in anticipation of each skip to build a velocity surplus, then decelerates after the skip to return to nominal. The effect is to shape the boundary conditions input $i$ presents at $\mathcal{B}^{UB}$ — keeping the entry velocity at $v_u$ and the entry acceleration at zero across the skip discontinuity. $\pi^U$ is open-loop and event-triggered; it does not react to a measured error, only to detected skip events. Its kinematic bounds are the upstream belt's hardware envelope.
+**$\pi^U$ — Upstream (source) policy.** Null. The upstream stage spawns inputs and does nothing kinematic; it carries no policy. It is retained as a named stage only to keep the stochastic source cleanly separated from the conditioning kinematics.
 
-**$\pi^I$ — Per-input buffer trajectory.** Generates the trajectory each input follows from buffer entry to buffer exit. The input must traverse $\Lambda^B = L^B - l$ in time $T_i^B$ (set by the slot picker per §6), entering at $(v_u, 0)$ and exiting at $(v^{BR}, 0)$. The trajectory is jerk-limited under bounds set by the zero-slip assumption: while a segment is bearing an input, the input must not slide on the belt, which caps the acceleration the segment can impose at the contact-friction limit. The jerk bound is set by servo capability under the no-slip regime. Detailed treatment is in _Buffer formalization_ §2.4.
+**$\pi^C$ — Conditioning policy.** Operates on the conditioning belt, between source and buffer. Detailed formalization in _Conditioning formalization_. $\pi^C$ runs the belt at the nominal velocity $v_c$ (the static stretch) and shapes velocity around events via a feedforward jerk timeline. It keeps the entry state input $i$ presents at $\mathcal{B}^{CB}$ nominal — velocity $v_c$, acceleration zero — across event discontinuities. Open-loop and event-triggered. Holds both the existing skip-response policy and the planned anti-cluster policy. Kinematic bounds are the conditioning belt's hardware envelope.
 
-**$\pi^S$ — Per-segment synchronization.** Resolves segment-level synchronization within the free windows between consecutive inputs. When segment $k$ has no input on it during the interval $W_{i,k} = t^\text{in}_{i+1,k} - t^\text{out}_{i,k}$, it must drive itself from the state delivered to input $i$ at handoff to the state demanded by input $i+1$ at receipt. Because no input is present during the free window, the zero-slip constraint does not bind: $\pi^S$ operates under the servo's own kinematic envelope, which is strictly more permissive than $\pi^I$'s. The current implementation uses Ruckig's jerk-limited time-optimal trajectory under these bounds. Detailed treatment is in _Buffer formalization_ §2.
+**$\pi^I$ — Per-input buffer trajectory.** Generates the trajectory each input follows from buffer entry to buffer exit. The input must traverse $\Lambda^B = L^B - l$ in time $T_i^B$ (set by the slot picker per §7), entering at $(v_c, 0)$ and exiting at $(v_d, 0)$. The trajectory is jerk-limited under bounds set by the zero-slip assumption: while a segment bears an input, the input must not slide on the belt, which caps acceleration at the contact-friction limit. The jerk bound is set by servo capability under the no-slip regime. Detailed treatment in _Buffer formalization_ §2.4.
 
-**$\pi^B_k$ — Per-segment combined control (implied).** What segment $k$ physically does at every instant of the simulation. Switches between two regimes: when an input is on segment $k$, the segment is locked to that input's $(v, a)$ by the zero-slip constraint, effectively executing a slice of $\pi^I$; when no input is on segment $k$, the segment executes $\pi^S$. $\pi^B_k$ is fully determined by $\pi^I$, $\pi^S$, and the schedule; it is not designed independently.
+**$\pi^S$ — Per-segment synchronization.** Resolves segment-level synchronization within the free windows between consecutive inputs. When segment $k$ has no input on it during the interval $W_{i,k} = t^\text{in}_{i+1,k} - t^\text{out}_{i,k}$, it must drive itself from the state delivered to input $i$ at handoff to the state demanded by input $i+1$ at receipt. Because no input is present during the free window, the zero-slip constraint does not bind: $\pi^S$ operates under the servo's own kinematic envelope, strictly more permissive than $\pi^I$'s. The current implementation uses Ruckig's jerk-limited time-optimal trajectory under these bounds. Detailed treatment in _Buffer formalization_ §2.
+
+**$\pi^B_k$ — Per-segment combined control (implied).** What segment $k$ physically does at every instant. When an input is on segment $k$, the segment is locked to that input's $(v, a)$ by the zero-slip constraint, executing a slice of $\pi^I$; when no input is on segment $k$, the segment executes $\pi^S$. Fully determined by $\pi^I$, $\pi^S$, and the schedule; not designed independently.
 
 ---
 
-## 10. Notation Summary
+## 11. Notation Summary
 
 |Symbol|Type|Meaning|
 |---|---|---|
 |$L^S$|design|Length of stage $S$|
-|$N^R$|design|Number of registration segments|
 |$v^k$|design|Crossing velocity at boundary $\mathcal{B}^k$|
-|$v_u \equiv v^{UB}$|design|Upstream belt speed|
-|$v^{BR}$|design|KSB exit velocity|
-|$v_d \equiv v^{RD}$|design|Downstream belt speed|
-|$w_n$|design|Deceleration weight for registration segment $n$; $\sum_n w_n = 1$, $w_1 < \cdots < w_{N^R}$|
+|$v_u$|derived|Spawn velocity of the source, $v_u = r_u \mu_u$|
+|$v_c$|design|Conditioning belt nominal velocity; buffer entry velocity|
+|$\eta_c$|design|Static stretch ratio $v_c / v_u \ge 1$|
+|$v_d$|design|Downstream belt / slot velocity, $v_d = r_d \mu_d$|
 |$l_i$|input|Physical length of input $i$|
 |$\Lambda^S$|derived|Effective control length of stage $S$: $L^S - l_i$|
 |$\tau_i^k$|derived|Straddling duration at boundary $k$: $l_i / v^k$|
-|$r_u, \mu_u, \sigma_u, \rho_u$|scenario|Upstream arrival rate, mean pitch, pitch std dev, AR(1) autocorrelation|
-|$r_d, \mu_d, v_d$|derived|Downstream slot rate, slot pitch, slot velocity ($v_d = r_d \mu_d$)|
+|$r_u, \mu_u, \sigma_u, \rho_u$|scenario|Source rate, mean pitch, pitch std dev, AR(1) autocorrelation|
+|$r_d, \mu_d, v_d$|derived|Downstream slot rate, slot pitch, slot velocity|
 |$\rho$|derived|Load ratio $r_u / r_d$|
 |$Q$|derived|Mean skip interval $1/(1-\rho)$ in input units|
-|$\phi_i$|per-input|Phase error: signed offset between input $i$ arrival and nearest slot, units $1/r_d$|
+|$\phi_i$|analysis|Phase error: reference-minus-controlled offset to assigned slot, units $1/r_d$|
 |$s_i$|per-input|Assigned slot index for input $i$|
-|$t_i^{S,\text{ctrl-start}}$|per-input|Time trailing edge clears entry boundary of stage $S$ — control opens|
-|$t_i^{S,\text{ctrl-end}}$|per-input|Time leading edge reaches exit boundary of stage $S$ — control must complete|
+|$t_i^{S,\text{ctrl-start}}$|per-input|Time trailing edge clears entry boundary of stage $S$|
+|$t_i^{S,\text{ctrl-end}}$|per-input|Time leading edge reaches exit boundary of stage $S$|
 |$T_i^S$|per-input|Control window duration on stage $S$|
 |$\mathbf{x}_i^S$|per-input|Entry state $[0,; v^{k_\text{in}},; 0]^\top$|
-|$\pi^U, \pi^I, \pi^S$|policy|Upstream, per-input buffer, per-segment synchronization|
+|$\pi^U$|policy|Upstream (source) policy — null|
+|$\pi^C$|policy|Conditioning policy (static stretch + reactive shaping)|
+|$\pi^I, \pi^S$|policy|Per-input buffer trajectory, per-segment synchronization|
 |$\pi^B_k$|implied|Per-segment combined control on segment $k$|

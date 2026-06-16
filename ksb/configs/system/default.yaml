@@ -6,12 +6,15 @@ input_gap_std: 0.10
 input_gap_rho: 0.0
 arrival_rate_ppm: 150
 
-# upstream
-upstream_control: const
-L_upstream: 3.0
-j_u_max: 100.0
-v_u_max: 3.0
-a_u_max: 8.5
+# Upstream
+L_upstream: 1.0
+
+# Conditioning
+conditioning_control: acc
+L_conditioning: 3.0
+j_c_max: 100.0
+v_c_max: 3.0
+a_c_max: 8.5
 
 # buffer
 jmax: 100.0
@@ -31,7 +34,7 @@ end_margin: 0.0
 
 # downstream
 L_downstream: 2.0
-eta_s: 2.0 # slot_length = eta_s * input_length
+eta_s: 2. # slot_length = eta_s * input_length
 eta_r: 2.0 # slot_rate   = eta_r * arrival_rate_ppm
 
 # \pi^S bounds

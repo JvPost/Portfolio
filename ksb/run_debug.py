@@ -37,7 +37,7 @@ def main():
 
     sim = KSBSimulation(cfg=cfg, solver=solver)
     result = sim.run(seed=args.seed)
-    u_timeline = sim._u_control._timeline
+    u_timeline = sim._c_control._timeline
     
 
     # ── Slot assignment ──────────────────────────────────────────────────────

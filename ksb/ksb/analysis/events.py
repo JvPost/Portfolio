@@ -60,7 +60,7 @@ def compute_segment_events(
     total_trajectories: List[TrajectoryProfile],
     t_spawn: np.ndarray,              # (b,)
     input_length: float,              # uniform l_i for now
-    L_upstream: float,
+    L_cond: float,
     Ls: np.ndarray,                   # (N_B,) segment lengths summing to L_buffer
 ) -> SegmentEvents:
     """Compute per-(input, segment) event times and kinematic states.
@@ -81,8 +81,8 @@ def compute_segment_events(
     P_buffer_exits = boundaries[1:]
 
     # Convert to absolute positions (composite trajectory frame)
-    P_abs_entries = L_upstream + P_buffer_entries
-    P_abs_exits = L_upstream + P_buffer_exits
+    P_abs_entries = L_cond + P_buffer_entries
+    P_abs_exits = L_cond + P_buffer_exits
 
     t_out = np.zeros((b, N_B))
     t_in = np.zeros((b, N_B))

@@ -256,13 +256,14 @@ class ConstantJerkTrajectory(TrajectoryProfile):
 @dataclass(frozen=True)
 class CompositeTrajectory(TrajectoryProfile):
     segments: Tuple[TrajectoryProfile, ...]
+    continuity_check_start: int = 1
 
     def __post_init__(self):
         if len(self.segments) == 0:
             raise ValueError("CompositeTrajectory must have at least one segment")
 
         # Velocity & acceleration continuity at junctions
-        for i in range(1, len(self.segments)):
+        for i in range(self.continuity_check_start, len(self.segments)):
             prev_seg = self.segments[i-1]
             curr_seg = self.segments[i]
 

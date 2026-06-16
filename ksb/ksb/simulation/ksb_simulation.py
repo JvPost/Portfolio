@@ -6,7 +6,7 @@ import numpy as np
 
 from ksb.analysis.events import compute_segment_events
 from ksb.analysis.sync_response import SegmentSyncResponse
-from ksb.control.upstream_control import ConstantVelocityControl, UpstreamController, PreAccelerateControl
+from ksb.control.conditioning_control import ConstantVelocityControl, ConditioningController, PreAccelerateControl
 from ksb.motion.item_pair import PairRecord, compute_pairs
 from ksb.motion.trajectories import CompositeTrajectory, ConstantJerkTrajectory, LinearTrajectory, TrajectoryProfile, P, V, A
 from ksb.planning.contracts import IProfileSolver, Policy
@@ -31,6 +31,7 @@ class KSBSimulation:
         self.Amax = float(cfg.get("Amax", 8.5))
 
         self.L_upstream = float(cfg.get("L_upstream", 1.0))
+        self.L_cond = float(cfg.get("L_conditioning", 1.0))
         self.L_buffer = float(cfg.get("L_buffer", 2.0))
         self.L_downstream = float(cfg.get("L_downstream", 1.0))
 
@@ -83,43 +84,46 @@ class KSBSimulation:
         v_min = float(cfg.get("v_min", 0.0))
         self.policy = Policy(input_length=self.input_length, v_min=v_min)
 
-        self.j_u_max = self.jmax
+        self.j_c_max = self.jmax
 
         # self.v_u_max = self.Vmax
         # self.v_u_max = float(cfg.get('v_u_max', 2.5))
-        self.v_u_max = self.vd
+        self.v_c_max = self.vd
 
-        self.a_u_max = self.Amax
+        self.a_c_max = self.Amax
         # self.a_u_max = np.abs(self.v_u_max - self.vu) / (self.Q * self.slot_period)
         # self.a_u_max = np.min([self.a_u_max, self.Amax])
 
-        self.upstream_control = cfg.get('upstream_control', 'const')
-        if (self.upstream_control == "acc"):
-            self._u_control = PreAccelerateControl(vu=self.vu, 
-                                                j_u_max=self.j_u_max,
+        self.cond_control = cfg.get('conditioning_control', 'const')
+        if (self.cond_control == "acc"):
+            self._c_control = PreAccelerateControl(vu=self.vu, 
+                                                j_c_max=self.j_c_max,
                                                 a_max=self.Amax, 
-                                                a_u_max=self.a_u_max,
-                                                v_u_max=self.v_u_max,
+                                                a_c_max=self.a_c_max,
+                                                v_c_max=self.v_c_max,
                                                 )
-        elif (self.upstream_control in ["constant", 'const']):
-            self._u_control = ConstantVelocityControl(self.vu)
+        elif (self.cond_control in ["constant", 'const']):
+            self._c_control = ConstantVelocityControl(self.vu)
         else:
-            raise KeyError("Unknown upstream control")
+            raise KeyError("Unknown conditioning control")
                                                
         self._d_solver = LinearTrajectorySolver()
 
     def run(self, seed: Optional[int] = None, *, skip_pair_records: bool = True) -> SimulationResult:
-        vu, vd = self.vu, self.vd
-        L_upstream, L_downstream = self.L_upstream, self.L_downstream
+        vc, vd = self.vu, self.vd
+        L_cond, L_downstream = self.L_cond, self.L_downstream
         slot_period = self.slot_period
         bounds, policy = self.input_bounds, self.policy
-        
-        x0_upstream = np.array([0.0, vu, 0.0])
+
+        # Upstream zone: constant velocity vu, includes straddling at B^UC boundary.
+        # Duration is fixed for all inputs.
+        T_upstream = (self.L_upstream) / self.vu
+        x0_upstream = np.array([0.0, self.vu, 0.0])
 
         # 1) Spawn times
         batch_t_spawn = utils.input_spawn_times_ar1(
             self.batch,
-            v0=vu,
+            v0=vc,
             mean=self.gap_mean,
             std=self.gap_std,
             rho=self.gap_rho,
@@ -127,31 +131,33 @@ class KSBSimulation:
             seed=seed,
         )
 
-        # 2) upstream control & 3) slot assignment
+        # 2) conditiongin control & 3) slot assignment
         assigned_slots = np.empty(self.batch, dtype=int)
         abs_t_buffer_start = np.empty(self.batch, dtype=float)
         buffer_T_array = np.empty_like(abs_t_buffer_start, dtype=float)
 
-        upstream_trajectories:List[TrajectoryProfile] = []
+        cond_trajectories:List[TrajectoryProfile] = []
         buffer_trajectories:List[TrajectoryProfile] = []
 
         slot_idx = 0
         prev_slot_idx = None
         
-        # Upstream control & slot assignments, which also computes buffer trajectory.
-        L_upstream_traj = L_upstream + self.input_length
+        # conditioning control & slot assignments, which also computes buffer trajectory.
+        L_cond_traj = L_cond + self.input_length
         L_buffer_traj = self.L_buffer - self.input_length
 
         phase_error_buffer = np.empty(self.batch, dtype=float)
-        phase_error_upstream = np.empty(self.batch, dtype=float)
+        phase_error_cond = np.empty(self.batch, dtype=float)
 
         for i, t0 in enumerate(batch_t_spawn):
-            
-            upstream_traj:TrajectoryProfile = self._u_control.subsection(t0, L_upstream_traj)
 
-            t_start_buffer_traj = t0 + upstream_traj.T 
+            # Conditioning starts after the item's trailing edge clears B^UC.
+            t0_cond = t0 + T_upstream
+            cond_traj: TrajectoryProfile = self._c_control.subsection(t0_cond, L_cond_traj)
 
-            buffer_xi = upstream_traj.xf
+            t_start_buffer_traj = t0_cond + cond_traj.T
+
+            buffer_xi = cond_traj.xf
 
             # buffer_vf = np.clip(buffer_xi[V], 0, self.Vmax) # equalize incoming and outgoing vel
             buffer_vf = self.vd # fixed
@@ -160,7 +166,7 @@ class KSBSimulation:
             # duration if all we did is cruise
             T_no_corr_buffer = (self.L_buffer - self.input_length) / buffer_xi[V]
 
-            ai = 0 if self.upstream_control == 'const' else self.a_u_max
+            ai = 0 if self.cond_control == 'const' else self.a_c_max
             # compute buffer trajectories
             slot_idx, buffer_traj = utils.get_next_slot(
                 i, t_start_buffer_traj, slot_idx, self.slot_length, buffer_xi[V],
@@ -169,26 +175,26 @@ class KSBSimulation:
 
             phase_error_b_i = (T_no_corr_buffer - buffer_traj.T) / slot_period # (reference - controlled) / slot_period
             
-            # same as phase_error_b_i, but with upstream included
-            phase_error_u_i = \
-                ((t0 + (self.L_upstream + self.L_buffer) / self.vu) - # reference - 
-                 (slot_idx * slot_period) # controlled
-                 ) / slot_period # / slot_period
+            # same as phase_error_b_i, but measured from upstream spawn origin
+            phase_error_c_i = \
+                ((t0 + (self.L_upstream + self.L_cond + self.L_buffer) / self.vu) - # reference -
+                 (slot_idx * slot_period)  # controlled
+                 ) / slot_period
 
             phase_error_buffer[i] = phase_error_b_i
-            phase_error_upstream[i] = phase_error_u_i
+            phase_error_cond[i] = phase_error_c_i
 
             if prev_slot_idx != None:
                 skipped = slot_idx > prev_slot_idx + 1
                 if not skipped:
                     # self._u_control.on_skip(t_start_buffer_traj)
-                    self._u_control.on_skip(abs_t_buffer_start[i-1])
+                    self._c_control.on_skip(abs_t_buffer_start[i-1])
 
 
             abs_t_buffer_start[i] = t_start_buffer_traj
             assigned_slots[i] = slot_idx
 
-            upstream_trajectories.append(upstream_traj)
+            cond_trajectories.append(cond_traj)
             buffer_trajectories.append(buffer_traj)
 
             prev_slot_idx = slot_idx
@@ -201,16 +207,19 @@ class KSBSimulation:
             T_buffer = buffer_trajectories[i].T
             buffer_T_array[i] = T_buffer
 
-            T_straddle_BR = self.input_length / buffer_trajectories[i].xf[V]
-            straddle_traj_BR = LinearTrajectory(
+            T_straddle_BD = self.input_length / buffer_trajectories[i].xf[V]
+            straddle_traj_BD = LinearTrajectory(
                 x0=np.array([0.0, buffer_trajectories[i].xf[V], 0.0]),
-                T=T_straddle_BR,
+                T=T_straddle_BD,
             )
 
+            upstream_traj_i = LinearTrajectory(x0=x0_upstream, T=T_upstream)
+
             total_T = (
-                upstream_trajectories[i].T
-                + T_buffer + T_straddle_BR # buffer + straddle
-                + downstream_T # after buffer
+                T_upstream
+                + cond_trajectories[i].T
+                + T_buffer + T_straddle_BD
+                + downstream_T
             )
 
             d_traj = self._d_solver.solve(
@@ -222,11 +231,13 @@ class KSBSimulation:
                 x0=x0_upstream,
                 T=total_T,
                 segments=(
-                    upstream_trajectories[i],
+                    upstream_traj_i,
+                    cond_trajectories[i],
                     buffer_trajectories[i],
-                    straddle_traj_BR,
+                    straddle_traj_BD,
                     d_traj,
                 ),
+                continuity_check_start=2
             )
             
             total_trajectories.append(comp_traj)
@@ -241,7 +252,7 @@ class KSBSimulation:
                 total_trajectories=total_trajectories,
                 t_spawn=batch_t_spawn,
                 input_length=self.input_length,
-                L_upstream=L_upstream,
+                L_cond=self.L_upstream + L_cond,
                 Ls=self.Ls,
             )
 
@@ -259,7 +270,7 @@ class KSBSimulation:
             assigned_slots=assigned_slots,
             time_horizons=buffer_T_array,
             skip_indices=skip_indices,
-            phi_u=phase_error_upstream,
+            phi_u=phase_error_cond,
             phi_b=phase_error_buffer,
             system_trajectories=total_trajectories,
             buffer_trajectories=buffer_trajectories,

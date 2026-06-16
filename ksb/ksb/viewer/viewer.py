@@ -33,7 +33,8 @@ HUD_H  = 32
 ITEM_PAD = 5          # vertical gap between item rect and lane top/bottom
 
 BG_COLOR          = (240, 242, 245)
-UPSTREAM_COLOR    = (180, 182, 186)
+UPSTREAM_COLOR    = (200, 202, 206)
+COND_COLOR        = (180, 182, 186)
 BUFFER_COLOR      = (160, 170, 200)
 DOWNSTREAM_COLOR  = (180, 182, 186)
 ZONE_LINE_COLOR   = (60,  60,  70)
@@ -121,10 +122,11 @@ class KSBViewer:
         # ------------------------------------------------------------------
         # Physical dimensions from cfg
         # ------------------------------------------------------------------
-        self.L_up   = float(cfg.get("L_upstream",   1.0))
-        self.L_buf  = float(cfg.get("L_buffer",      2.0))
-        self.L_dn   = float(cfg.get("L_downstream",  1.0))
-        self.L_tot  = self.L_up + self.L_buf + self.L_dn
+        self.L_ups  = float(cfg.get("L_upstream",      1.0))
+        self.L_cond = float(cfg.get("L_conditioning",  1.0))
+        self.L_buf  = float(cfg.get("L_buffer",        2.0))
+        self.L_dn   = float(cfg.get("L_downstream",    1.0))
+        self.L_tot  = self.L_ups + self.L_cond + self.L_buf + self.L_dn
 
         self.input_length = float(cfg.get("input_length", 0.32))
         self.n_buffer_seg = int(cfg.get("n_buffer_seg", 5))
@@ -183,9 +185,10 @@ class KSBViewer:
         self.lane = pygame.Rect(MARGIN, MARGIN, belt_w, LANE_H)
 
         # Zone pixel edges (left x of each zone boundary)
-        self.x_buf_start = MARGIN + _px(self.L_up,             self.ppm)
-        self.x_dn_start  = MARGIN + _px(self.L_up + self.L_buf, self.ppm)
-        self.x_right     = MARGIN + belt_w
+        self.x_cond_start = MARGIN + _px(self.L_ups,                          self.ppm)
+        self.x_buf_start  = MARGIN + _px(self.L_ups + self.L_cond,            self.ppm)
+        self.x_dn_start   = MARGIN + _px(self.L_ups + self.L_cond + self.L_buf, self.ppm)
+        self.x_right      = MARGIN + belt_w
 
         # HUD rect
         hud_top = MARGIN + LANE_H
@@ -342,20 +345,24 @@ class KSBViewer:
         lane = self.lane
         y, h = lane.top, lane.height
 
-        # Upstream zone
-        r_up = pygame.Rect(lane.left, y, self.x_buf_start - lane.left, h)
-        pygame.draw.rect(screen, UPSTREAM_COLOR, r_up)
+        # upstream zone
+        r_ups = pygame.Rect(lane.left, y, self.x_cond_start - lane.left, h)
+        pygame.draw.rect(screen, UPSTREAM_COLOR, r_ups)
+
+        # conditioning zone
+        r_cond = pygame.Rect(self.x_cond_start, y, self.x_buf_start - self.x_cond_start, h)
+        pygame.draw.rect(screen, COND_COLOR, r_cond)
 
         # Buffer zone — draw individual segments using non-uniform belt_lengths widths
         for k in range(self.n_buffer_seg):
-            px_left  = MARGIN + _px(self.L_up + self._buf_cum[k],     self.ppm)
-            px_right = MARGIN + _px(self.L_up + self._buf_cum[k + 1], self.ppm)
+            px_left  = MARGIN + _px(self.L_ups + self.L_cond + self._buf_cum[k],     self.ppm)
+            px_right = MARGIN + _px(self.L_ups + self.L_cond + self._buf_cum[k + 1], self.ppm)
             seg_rect = pygame.Rect(px_left, y, max(1, px_right - px_left), h)
             pygame.draw.rect(screen, self._get_buffer_segment_color(k), seg_rect)
 
         # Interior segment dividers: N-1 inset lines, visually lighter than zone edges
         for k in range(1, self.n_buffer_seg):
-            px = MARGIN + _px(self.L_up + self._buf_cum[k], self.ppm)
+            px = MARGIN + _px(self.L_ups + self.L_cond + self._buf_cum[k], self.ppm)
             pygame.draw.line(screen, BUF_SEG_DIV_COLOR, (px, y + 4), (px, y + h - 4), 1)
 
         # Downstream zone
@@ -366,14 +373,15 @@ class KSBViewer:
         pygame.draw.rect(screen, ZONE_LINE_COLOR, lane, width=1)
 
         # Zone boundary lines
-        for bx in (self.x_buf_start, self.x_dn_start):
+        for bx in (self.x_cond_start, self.x_buf_start, self.x_dn_start):
             pygame.draw.line(screen, ZONE_LINE_COLOR, (bx, y), (bx, y + h), 1)
 
         # Zone labels
         labels = [
-            ("upstream",   (lane.left + self.x_buf_start) // 2),
-            ("buffer",     (self.x_buf_start + self.x_dn_start) // 2),
-            ("downstream", (self.x_dn_start + self.x_right) // 2),
+            ("upstream",     (lane.left + self.x_cond_start) // 2),
+            ("conditioning", (self.x_cond_start + self.x_buf_start) // 2),
+            ("buffer",       (self.x_buf_start + self.x_dn_start) // 2),
+            ("downstream",   (self.x_dn_start + self.x_right) // 2),
         ]
         for text, cx in labels:
             surf, _ = font.render(text, ZONE_LABEL_COLOR)
@@ -392,7 +400,7 @@ class KSBViewer:
         k_min = math.ceil((t - self.L_dn / self.vd) / self.slot_period)
         k_max = math.floor(t / self.slot_period)
 
-        dn_origin = self.L_up + self.L_buf   # B^{RD}
+        dn_origin = self.L_ups + self.L_cond + self.L_buf   # B^{BD}
         for k in range(k_min, k_max + 1):
             pos = dn_origin + self.vd * (t - k * self.slot_period)
             if pos < dn_origin - 1e-9 or pos > self.L_tot + 1e-9:

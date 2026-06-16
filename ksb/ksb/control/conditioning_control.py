@@ -17,7 +17,7 @@ from ksb.motion.trajectories import (
 Segment = Tuple[float, float, float]
 
 
-class UpstreamController(ABC):
+class ConditioningController(ABC):
     """Stateful upstream belt controller backed by an append-only jerk timeline.
 
     The timeline T is a list of constant-jerk segments:
@@ -208,7 +208,7 @@ class UpstreamController(ABC):
 # ======================================================================
 
 
-class ConstantVelocityControl(UpstreamController):
+class ConstantVelocityControl(ConditioningController):
     """No-op controller. Belt runs at constant v_u. Baseline for comparison."""
 
     def __init__(self, vu: float) -> None:
@@ -218,7 +218,7 @@ class ConstantVelocityControl(UpstreamController):
         pass
 
 
-class PreAccelerateControl(UpstreamController):
+class PreAccelerateControl(ConditioningController):
     """Upstream feedforward controller.
 
     Between skips the belt accelerates, building a velocity surplus that
@@ -260,21 +260,21 @@ class PreAccelerateControl(UpstreamController):
     def __init__(
         self,
         vu: float,
-        j_u_max: float,
+        j_c_max: float,
         a_max: float,
-        a_u_max: float,
-        v_u_max: float,
+        a_c_max: float,
+        v_c_max: float,
     ) -> None:
         super().__init__(vu)
-        self._j_max = j_u_max
+        self._j_max = j_c_max
         self._a_max = a_max              # deceleration bound (Pi_k^dec)
-        self._a_max_acc = a_u_max      # acceleration bound (Pi_k^acc)
-        self._v_max_up = v_u_max
-        self._dv_max = v_u_max - vu
+        self._a_max_acc = a_c_max      # acceleration bound (Pi_k^acc)
+        self._v_max_up = v_c_max
+        self._dv_max = v_c_max - vu
         self._t_last_recovery: float = 0.0
 
         # Pi_1^acc starts immediately
-        if a_u_max > 0:
+        if a_c_max > 0:
             self._append_acceleration(0.0)
 
     # ------------------------------------------------------------------
@@ -361,7 +361,7 @@ class PreAccelerateControl(UpstreamController):
 
         Returns t_k^rec — the time at which deceleration completes.
 
-        The profile brings the belt from (v_u + dv_k, a_k) back to (v_u, 0).
+        The profile brings the belt from (v_c + dv_k, a_k) back to (v_c, 0).
 
         Trapezoidal (large dv_k, saturates at -a_max):
             [-j_max] ramp a_k -> -a_max
