@@ -2,19 +2,17 @@
 batch: 100
 input_length: 0.32
 input_gap_mean: 0.6
-input_gap_std: 0.10
-input_gap_rho: 0.0
-arrival_rate_ppm: 150
+input_gap_std: 0.05
+input_gap_rho: 0.5
+arrival_rate_ppm: 180
 
 # Upstream
 L_upstream: 1.0
 
 # Conditioning
-conditioning_control: acc
-L_conditioning: 3.0
-j_c_max: 100.0
-v_c_max: 3.0
-a_c_max: 8.5
+conditioning_control: const
+L_conditioning: 2.0
+eta_v: 0.7
 
 # buffer
 jmax: 100.0
@@ -25,7 +23,7 @@ beta: 0.0
 gamma: 0.0
 
 solver: ruckig
-L_buffer: 2.5
+L_buffer: 2.
 n_buffer_seg: 7
 
 v_min: 0.0 # planner-imposed velocity floor (m/s); 0 means no floor
@@ -34,7 +32,7 @@ end_margin: 0.0
 
 # downstream
 L_downstream: 2.0
-eta_s: 2. # slot_length = eta_s * input_length
+eta_s: 1.5 # slot_length = eta_s * input_length
 eta_r: 2.0 # slot_rate   = eta_r * arrival_rate_ppm
 
 # \pi^S bounds

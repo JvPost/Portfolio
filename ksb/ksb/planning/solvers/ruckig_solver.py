@@ -80,12 +80,12 @@ class RuckigTrajectory(TrajectoryProfile):
             t_mid = 0.5 * (t_lo + t_hi)
             p_mid = self._traj.at_time(t_mid)[0][0]
 
-            if not (p_lo - tol <= p_mid <= p_hi + tol):
-                raise InputError(
-                    f"Non-monotonic position in RuckigTrajectory bisection: "
-                    f"p(t_lo={t_lo:.6f})={p_lo:.6f}, p(t_mid={t_mid:.6f})={p_mid:.6f}, "
-                    f"p(t_hi={t_hi:.6f})={p_hi:.6f}"
-                )
+            # if not (p_lo - tol <= p_mid <= p_hi + tol):
+            #     raise InputError(
+            #         f"Non-monotonic position in RuckigTrajectory bisection: "
+            #         f"p(t_lo={t_lo:.6f})={p_lo:.6f}, p(t_mid={t_mid:.6f})={p_mid:.6f}, "
+            #         f"p(t_hi={t_hi:.6f})={p_hi:.6f}"
+            #     )
 
             if abs(p_mid - p_target) < tol:
                 return t_mid

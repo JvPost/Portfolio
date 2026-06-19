@@ -85,14 +85,10 @@ class KSBSimulation:
         self.policy = Policy(input_length=self.input_length, v_min=v_min)
 
         self.j_c_max = self.jmax
-
-        # self.v_u_max = self.Vmax
-        # self.v_u_max = float(cfg.get('v_u_max', 2.5))
         self.v_c_max = self.vd
-
         self.a_c_max = self.Amax
-        # self.a_u_max = np.abs(self.v_u_max - self.vu) / (self.Q * self.slot_period)
-        # self.a_u_max = np.min([self.a_u_max, self.Amax])
+
+        eta_v = float(cfg.get('eta_v', 1.0))
 
         self.cond_control = cfg.get('conditioning_control', 'const')
         if (self.cond_control == "acc"):
@@ -100,10 +96,10 @@ class KSBSimulation:
                                                 j_c_max=self.j_c_max,
                                                 a_max=self.Amax, 
                                                 a_c_max=self.a_c_max,
-                                                v_c_max=self.v_c_max,
-                                                )
+                                                v_c_max=self.v_c_max)
         elif (self.cond_control in ["constant", 'const']):
-            self._c_control = ConstantVelocityControl(self.vu)
+            self.vc =  (1 - eta_v) * self.vu + eta_v * self.vd
+            self._c_control = ConstantVelocityControl(self.vc)
         else:
             raise KeyError("Unknown conditioning control")
                                                

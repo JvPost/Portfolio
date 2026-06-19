@@ -116,7 +116,7 @@ def plot_kinematic_margin(
 
 def plot_pair_profile(
     values: np.ndarray,
-    skip_indices,
+    markers: np.ndarray | None = None,
     *,
     segments=None,
     ax: plt.Axes | None = None,
@@ -131,7 +131,7 @@ def plot_pair_profile(
     values:
         Array of shape (n_seeds, n_pairs, n_segments).  Reduced to mean ± std
         over axis 0 before plotting.
-    skip_indices:
+    Markers:
         Iterable of pair indices at which to draw red dashed verticals.
     segments:
         Iterable of segment indices k to plot.  Defaults to all segments.
@@ -171,12 +171,13 @@ def plot_pair_profile(
             alpha=0.2,
         )
 
-    for skip in skip_indices:
-        skip_i = skip+1
-        ax.axvline(x=skip_i, color="red", linestyle="--", linewidth=0.8, alpha=0.7)
+    if markers is not None:
+        for mark in markers:
+            mark_i = mark+1
+            ax.axvline(x=mark_i, color="red", linestyle="--", linewidth=0.8, alpha=0.7)
 
-        ax.text(skip_i, -.01, str(skip_i), color="red", fontsize=8, ha="center",
-                va="top", transform=ax.get_xaxis_transform())
+            ax.text(mark_i, -.01, str(mark_i), color="red", fontsize=8, ha="center",
+                    va="top", transform=ax.get_xaxis_transform())
 
     ax.set_xlabel("Pair $(i, i+1)$")
     ax.set_ylabel(ylabel)
