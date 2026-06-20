@@ -164,6 +164,7 @@ class KSBSimulation:
 
             ai = 0 if self.cond_control == 'const' else self.a_c_max
             # compute buffer trajectories
+
             slot_idx, buffer_traj = utils.get_next_slot(
                 i, t_start_buffer_traj, slot_idx, self.slot_length, buffer_xi[V],
                 buffer_vf, ai, L_buffer_traj, self.input_bounds,

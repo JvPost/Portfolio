@@ -1,5 +1,5 @@
 # input
-batch: 100
+batch: 200
 input_length: 0.32
 input_gap_mean: 0.6
 input_gap_std: 0.05

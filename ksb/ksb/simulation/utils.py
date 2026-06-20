@@ -280,6 +280,8 @@ def get_next_slot(
                 0.0, vi, L, vf, time_horizon, bounds, policy, ai=ai,
                 af=0
             )
+            # if k == slot_idx+1:
+            #     raise InfeasibleError("Must skip 1")
             return k, traj
         except InfeasibleError: # skip
             continue

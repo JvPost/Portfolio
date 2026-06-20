@@ -331,7 +331,7 @@ def plot_margin_cdf(
         values = np.sort(margin[:, k])
         n = values.size
         cdf = np.arange(1, n + 1) / n
-        line, = ax.step(values, cdf, where="post", label=f"k={k}")
+        line, = ax.step(values, cdf, where="post", label=f"k={k}", color=f"C{k}")
 
         if band:
             se = np.sqrt(cdf * (1 - cdf) / n)
