@@ -6,11 +6,6 @@ the project is the machinery itself: building the Gram matrix, fitting kernel
 hyperparameters by maximizing the log marginal likelihood, and using the resulting
 posterior to drive an acquisition function toward the optimum of a black-box function.
 
-![GP fit to the Rosenbrock function — true surface, posterior mean, and posterior std](rosenbrock_gp.png)
-*Example output of `gp_app2d.py`: a 2D GP (squared-exponential kernel, hyperparameters
-fit by marginal-likelihood optimization) regressed onto noisy samples of the Rosenbrock
-function.*
-
 ## Layout
 
 - **`GP.py`** — the `GP` class. Builds the Gram matrix from a kernel, fits the kernel's
