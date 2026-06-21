@@ -6,6 +6,8 @@ every item into its slot — on time, in order, without collision — using only
 motion. This project formalizes that problem from first principles and characterizes,
 quantitatively, where and why it fails.
 
+![KSB viewer — items synchronizing through the four-stage pipeline](assets/viewer.gif)
+
 The KSB is an open-source reconstruction of an industrial conveyor-synchronization problem.
 It is built around a single diagnostic quantity, the **kinematic margin** $M_{i,k}$ — the
 slack, in seconds, between the time a buffer segment has to reconfigure between two items
