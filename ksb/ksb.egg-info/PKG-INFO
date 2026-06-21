@@ -5,3 +5,10 @@ Summary: Kinematic Synchronization Buffer — jerk-limited trajectory planning f
 Requires-Python: >=3.11
 Requires-Dist: numpy>=1.24
 Requires-Dist: scipy>=1.10
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: ruckig>=0.9
+Requires-Dist: matplotlib>=3.7
+Provides-Extra: viewer
+Requires-Dist: pygame>=2.0; extra == "viewer"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"

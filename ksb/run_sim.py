@@ -41,14 +41,6 @@ def main():
     print(f"Simulation time : {elapsed:.3f} s")
     print()
 
-    # ── Slot assignment ──────────────────────────────────────────────────────
-    print("=== Slot assignment ===")
-    skips = result.skip_indices + 1
-    if len(skips) == 0:
-        print("  Skipped slots  : none")
-    else:
-        print(f"  Skipped slots  : {len(skips)} skip(s) after item(s) {skips}")
-
     # ── Time horizons ────────────────────────────────────────────────────────
     print()
     print("=== Time horizons (buffer correction window) ===")

@@ -10,7 +10,17 @@ requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
-    "cma>=3.3",
+    "pyyaml>=6.0",
+    "ruckig>=0.9",
+    "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+viewer = [
+    "pygame>=2.0",
+]
+dev = [
+    "pytest>=7.0",
 ]
 
 [tool.setuptools.packages.find]

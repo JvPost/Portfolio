@@ -44,4 +44,35 @@ formalization, and the architecture derivation that chains the failure modes abo
 
 ## Running it
 
-<!-- TODO: install + run instructions go here once the packaging approach is settled -->
+KSB is a pure-Python package. Clone it, install, and run the simulation:
+
+```bash
+git clone https://github.com/JvPost/Portfolio.git
+cd Portfolio/ksb
+pip install -e .
+python run_sim.py
+```
+
+`run_sim.py` runs a full batch simulation and prints a diagnostic summary — slot
+assignment and skips, the time-horizon distribution, phase error, and the fraction of
+segment-boundary events that are infeasible (the kinematic-margin failures the analysis
+characterizes). Configuration is read from `configs/system/default.yaml`; point at a
+different config with `--config NAME` and set the arrival seed with `--seed INT`.
+
+### Viewer (optional)
+
+The interactive viewer renders the four-stage pipeline — source, conditioning, buffer,
+downstream — with items animating through it in real time. It needs an extra dependency:
+
+```bash
+pip install -e ".[viewer]"
+python run_viewer.py
+```
+
+The viewer uses pygame and requires a display. On native Linux, macOS, or Windows it
+opens directly; under WSL you will need an X server configured for the window to appear.
+
+### Requirements
+
+Python 3.11+. Core dependencies (NumPy, SciPy, Ruckig, PyYAML) install automatically with
+`pip install -e .`; the viewer's pygame dependency is the `[viewer]` extra above.
